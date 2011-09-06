@@ -472,9 +472,10 @@ if (typeof Extras == "undefined" || !Extras)
           
           obj.method = obj.method || Alfresco.util.Ajax.GET;
           
-          var objToParamString = function(o)
+          var objToParamString = function(o, spaceChar)
           {
               var params = "", first = true, attr;
+              spaceChar = spaceChar;
               for (attr in o)
               {
                   if (o.hasOwnProperty(attr))
@@ -487,7 +488,10 @@ if (typeof Extras == "undefined" || !Extras)
                       {
                           params += "&";
                       }
-                      params += encodeURIComponent(attr) + "=" + encodeURIComponent(o[attr]);
+                      params += encodeURIComponent(attr) + "=" + 
+                          (YAHOO.lang.isUndefined(spaceChar) ? encodeURIComponent(o[attr]) : encodeURIComponent("" + o[attr]).
+                                  replace("%20", spaceChar, "g").replace(/!/g, '%21').replace(/'/g, '%27').replace(/\(/g, '%28').  
+                                  replace(/\)/g, '%29').replace(/\*/g, '%2A'));
                   }
               }
               return params;
@@ -504,11 +508,11 @@ if (typeof Extras == "undefined" || !Extras)
                   var reqType = obj.requestContentType || Alfresco.util.Ajax.FORM;
                   if (!YAHOO.lang.isValue(obj.dataStr))
                   {
-                      if ((new RegExp("^\s*" + Alfresco.util.Ajax.FORM)).test(contentType))
+                      if ((new RegExp("^\s*" + Alfresco.util.Ajax.FORM)).test(reqType))
                       {
-                          obj.dataStr = objToParamString(obj.dataObj);
+                          obj.dataStr = objToParamString(obj.dataObj, "+");
                       }
-                      else if ((new RegExp("^\s*" + Alfresco.util.Ajax.JSON)).test(contentType))
+                      else if ((new RegExp("^\s*" + Alfresco.util.Ajax.JSON)).test(reqType))
                       {
                           obj.dataStr = YAHOO.lang.JSON.stringify(c.dataObj || {});
                       }
