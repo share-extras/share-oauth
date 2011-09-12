@@ -247,6 +247,13 @@ public class HttpOAuthConnector extends HttpConnector
 		}
     }
     
+    /**
+     * Percent-encode a parameter for construction of the base string and the Authorization header, 
+     * as specified in http://tools.ietf.org/html/rfc5849#section-3.6
+     * 
+     * @param p Unencoded string
+     * @return Encoded text
+     */
     private String encodeParameter(String p)
     {
     	String encoded = URLEncoder.encodeUriComponent(p);
@@ -261,7 +268,8 @@ public class HttpOAuthConnector extends HttpConnector
 			lastEnd = m.end();
 		}
     	sb.append(encoded.substring(lastEnd));
-		return sb.toString();
+		return sb.toString().replaceAll("!", "%21").replaceAll("\\(", "%28").replaceAll("\\)", "%29")
+			.replaceAll("\\*", "%2A");
     }
 	
     @SuppressWarnings("unchecked")
