@@ -109,7 +109,10 @@
     </path>
 
     <path id="compile.classpath">
-        <fileset dir="${alfereco.sdk.dir}">
+        <fileset dir="${surf.src.dir}">
+            <include name="spring-webscripts/spring-webscripts/target/spring-webscripts-1.0.0.CI-SNAPSHOT.jar" />
+        </fileset>
+        <fileset dir="${alfresco.sdk.dir}">
             <include name="lib/server/dependencies/**/*.jar" />
             <include name="lib/server/*.jar" />
         </fileset>
