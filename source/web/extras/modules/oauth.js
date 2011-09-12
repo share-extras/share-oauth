@@ -113,9 +113,9 @@ if (typeof Extras == "undefined" || !Extras)
             * 
             * @property addTimestamps
             * @type boolean
-            * @default true
+            * @default false
             */
-           addTimestamps: true
+           addTimestamps: false
        },
       
       /**
