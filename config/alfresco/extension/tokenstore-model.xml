@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<model name="se:tokenstoremodel" xmlns="http://www.alfresco.org/model/dictionary/1.0">
+
+   <description>Token Store Model</description>
+   <author>Will Abson</author>
+   <version>1.0</version>
+
+   <imports>
+       <!-- Import Alfresco Dictionary Definitions -->
+       <import uri="http://www.alfresco.org/model/dictionary/1.0" prefix="d" />
+       <!-- Import Alfresco Content Domain Model Definitions -->
+       <import uri="http://www.alfresco.org/model/content/1.0" prefix="cm" />
+       <!-- Import Alfresco Datalist Domain Model Definitions -->
+       <import uri="http://www.alfresco.org/model/datalist/1.0" prefix="dl"/>
+   </imports>
+
+   <!-- Introduction of new namespaces defined by this model -->
+   <namespaces>
+       <namespace uri="http://sharextras.org/model/sharextras/1.0" prefix="se" />
+   </namespaces>
+   
+   <aspects>
+      <aspect name="se:userTokens">
+         <title>User Tokens</title>
+         <associations>
+            <child-association name="se:tokenContent">
+               <source>
+                  <mandatory>false</mandatory>
+                  <many>false</many>
+               </source>
+               <target>
+                  <class>cm:content</class>
+                  <mandatory>false</mandatory>
+                  <many>false</many>
+               </target>
+               <duplicate>false</duplicate>
+               <propagateTimestamps>false</propagateTimestamps>
+            </child-association>
+         </associations>
+      </aspect>
+   </aspects>
+
+</model>

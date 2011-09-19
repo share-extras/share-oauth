@@ -115,7 +115,16 @@ if (typeof Extras == "undefined" || !Extras)
             * @type boolean
             * @default false
             */
-           addTimestamps: false
+           addTimestamps: false,
+           
+           /**
+            * The type of store to be used to persist key values. One of "preferences" or "keystore"
+            * 
+            * @property storeType
+            * @type string
+            * @default "keystore"
+            */
+           storeType: "keystore"
        },
       
       /**
@@ -379,82 +388,131 @@ if (typeof Extras == "undefined" || !Extras)
        */
       loadCredentials: function OAuth_saveCredentials(obj)
       {
-          this.preferences.request(PREFS_BASE + this.options.providerId + "." + PREF_DATA, {
-              successCallback: {
-                  fn: function (p_resp) {
-                      var json = p_resp.json;
-                      if (json != null && json.org != null)
+          var successCallback = {
+              fn: function (p_resp) {
+                  var json = p_resp.json;
+                  if (json != null && json.org != null)
+                  {
+                      var credentials = json.org.alfresco.share.oauth[this.options.providerId].data;
+                      if (credentials != null && credentials.length > 0)
                       {
-                          var credentials = json.org.alfresco.share.oauth[this.options.providerId].data;
-                          if (credentials != null && credentials.length > 0)
+                          var authData = this._unpackAuthData(credentials);
+                          // Ensure both required tokens have been found
+                          if (!YAHOO.lang.isUndefined(authData.oauth_token) && !YAHOO.lang.isUndefined(authData.oauth_token_secret))
                           {
-                              var authData = this._unpackAuthData(credentials);
-                              // Ensure both required tokens have been found
-                              if (!YAHOO.lang.isUndefined(authData.oauth_token) && !YAHOO.lang.isUndefined(authData.oauth_token_secret))
-                              {
-                                  this.authData = authData;
-                              }
+                              this.authData = authData;
                           }
                       }
+                  }
 
-                      // Call the success callback
-                      var successCallback =  obj ? obj.successCallback : null;
-                      if (successCallback && successCallback.fn && typeof (successCallback.fn) == "function")
-                      {
-                          successCallback.fn.call(successCallback.scope, this);
-                      }
-                  },
-                  scope: this
+                  // Call the success callback
+                  var successCallback =  obj ? obj.successCallback : null;
+                  if (successCallback && successCallback.fn && typeof (successCallback.fn) == "function")
+                  {
+                      successCallback.fn.call(successCallback.scope, this);
+                  }
               },
-              failureCallback: {
-                  fn: function (p_resp) {
-                      // Call the failure callback
-                      var failureCallback = obj ? obj.failureCallback : null;
-                      if (failureCallback && failureCallback.fn && typeof (failureCallback.fn) == "function")
-                      {
-                          failureCallback.fn.call(failureCallback.scope);
-                      }
-                  },
-                  scope: this
-              }
-          });
+              scope: this
+          },
+          failureCallback = {
+              fn: function (p_resp) {
+                  // Call the failure callback
+                  var failureCallback = obj ? obj.failureCallback : null;
+                  if (failureCallback && failureCallback.fn && typeof (failureCallback.fn) == "function")
+                  {
+                      failureCallback.fn.call(failureCallback.scope);
+                  }
+              },
+              scope: this
+          };
+          
+          var pn = PREFS_BASE + this.options.providerId + "." + PREF_DATA;
+          if (this.options.storeType == "preferences")
+          {
+              this.preferences.request(pn, {
+                  successCallback: successCallback,
+                  failureCallback: failureCallback
+              });
+          }
+          else if (this.options.storeType == "keystore")
+          {
+              var url = Alfresco.constants.PROXY_URI + "extras/slingshot/tokenstore/usertoken?filter=" + pn;
+              Alfresco.util.Ajax.jsonRequest({
+                  method: Alfresco.util.Ajax.GET,
+                  url: url,
+                  dataObj: null,
+                  successCallback: successCallback,
+                  failureCallback: failureCallback
+                  
+              });
+          }
+          else
+          {
+              throw "Unsupported store type";
+          }
+          
       },
 
       /**
-       * Save the access credentials to persistant, user-specific storage. Currently the preferences
-       * service is used as storage.
+       * Save the access credentials to persistant, user-specific storage. Supports preferences service (insecure) and user
+       * keystore to save values.
        * 
        * @method saveCredentials
-       * @param obj {object}  Object literal defining two handler functions, 'successCallback' and 'failureCallback'.
-       *    Each handler is another object defining 'fn' and 'scope' properties.
+       * @param obj {object}  Object literal defining two callback objects, 'successCallback' and 'failureCallback'.
+       *    Each callback must define both 'fn' and 'scope' properties.
        */
       saveCredentials: function OAuth_saveCredentials(obj)
       {
-          this.preferences.set(PREFS_BASE + this.options.providerId + "." + PREF_DATA, this._packAuthData(this.authData), {
-              successCallback: {
-                  fn: function (p_resp)
+          var successCallback = {
+              fn: function (p_resp)
+              {
+                  // Call the success callback
+                  var successCallback = obj ? obj.successCallback : null;
+                  if (successCallback && successCallback.fn && typeof (successCallback.fn) == "function")
                   {
-                      // Call the success callback
-                      var successCallback = obj ? obj.successCallback : null;
-                      if (successCallback && successCallback.fn && typeof (successCallback.fn) == "function")
-                      {
-                          successCallback.fn.call(successCallback.scope);
-                      }
-                  },
-                  scope: this
+                      successCallback.fn.call(successCallback.scope);
+                  }
               },
-              failureCallback: {
-                  fn: function (p_resp) {
-                      // Call the failure callback
-                      var failureCallback = obj ?  obj.failureCallback: null;
-                      if (failureCallback && failureCallback.fn && typeof (failureCallback.fn) == "function")
-                      {
-                          failureCallback.fn.call(failureCallback.scope);
-                      }
-                  },
-                  scope: this
-              }
-          });
+              scope: this
+          },
+          failureCallback = {
+              fn: function (p_resp) {
+                  // Call the failure callback
+                  var failureCallback = obj ?  obj.failureCallback: null;
+                  if (failureCallback && failureCallback.fn && typeof (failureCallback.fn) == "function")
+                  {
+                      failureCallback.fn.call(failureCallback.scope);
+                  }
+              },
+              scope: this
+          };
+
+          var pn = PREFS_BASE + this.options.providerId + "." + PREF_DATA,
+              data = this._packAuthData(this.authData);
+          if (this.options.storeType == "preferences")
+          {
+              this.preferences.set(pn, data, {
+                  successCallback : successCallback,
+                  failureCallback: failureCallback
+              });
+          }
+          else if (this.options.storeType == "keystore")
+          {
+              var url = Alfresco.constants.PROXY_URI + "extras/slingshot/tokenstore/usertoken",
+                  dataObj = Alfresco.util.dotNotationToObject(pn, data);
+              Alfresco.util.Ajax.jsonRequest({
+                  method: Alfresco.util.Ajax.POST,
+                  url: url,
+                  dataObj: dataObj,
+                  successCallback: successCallback,
+                  failureCallback: failureCallback
+                  
+              });
+          }
+          else
+          {
+              throw "Unsupported store type";
+          }
       },
       
       /**

@@ -1,0 +1,8 @@
+<webscript>
+	 <shortname>Get user token</shortname>
+	 <description>Get user token information</description>
+	 <url>/extras/slingshot/tokenstore/usertoken</url>
+	 <url>/extras/slingshot/tokenstore/usertoken/{path}</url>
+	 <format default="json">extension</format>
+	 <authentication>user</authentication>
+</webscript>
