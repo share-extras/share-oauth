@@ -572,7 +572,7 @@ if (typeof Extras == "undefined" || !Extras)
                       }
                       else if ((new RegExp("^\s*" + Alfresco.util.Ajax.JSON)).test(reqType))
                       {
-                          obj.dataStr = YAHOO.lang.JSON.stringify(c.dataObj || {});
+                          obj.dataStr = YAHOO.lang.JSON.stringify(obj.dataObj || {});
                       }
                   }
               }
