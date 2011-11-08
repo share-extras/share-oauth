@@ -548,7 +548,7 @@ if (typeof Extras == "undefined" || !Extras)
                       }
                       params += encodeURIComponent(attr) + "=" + 
                           (YAHOO.lang.isUndefined(spaceChar) ? encodeURIComponent(o[attr]) : encodeURIComponent("" + o[attr]).
-                                  replace("%20", spaceChar, "g").replace(/!/g, '%21').replace(/'/g, '%27').replace(/\(/g, '%28').  
+                                  replace(/%20/g, spaceChar).replace(/!/g, '%21').replace(/'/g, '%27').replace(/\(/g, '%28').  
                                   replace(/\)/g, '%29').replace(/\*/g, '%2A'));
                   }
               }
