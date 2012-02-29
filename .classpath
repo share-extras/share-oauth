@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<classpath>
+	<classpathentry kind="src" path="source/java"/>
+	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER/org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/JavaSE-1.6">
+		<attributes>
+			<attribute name="owner.project.facets" value="java"/>
+		</attributes>
+	</classpathentry>
+	<classpathentry kind="lib" path="C:/AlfrescoSDK/alfresco-community-sdk-4.0.d/lib/server/dependencies/commons/commons-logging-1.1.1.jar"/>
+	<classpathentry kind="lib" path="C:/AlfrescoSDK/alfresco-community-sdk-4.0.d/lib/server/dependencies/j2ee/servlet.jar"/>
+	<classpathentry kind="lib" path="C:/AlfrescoSDK/alfresco-community-sdk-4.0.d/lib/server/dependencies/spring-surf/spring-cmis-framework-1.0.0.jar"/>
+	<classpathentry kind="lib" path="C:/AlfrescoSDK/alfresco-community-sdk-4.0.d/lib/server/dependencies/spring-surf/spring-surf-1.0.0.jar"/>
+	<classpathentry kind="lib" path="C:/AlfrescoSDK/alfresco-community-sdk-4.0.d/lib/server/dependencies/spring-surf/spring-surf-api-1.0.0.jar"/>
+	<classpathentry kind="lib" path="C:/AlfrescoSDK/alfresco-community-sdk-4.0.d/lib/server/dependencies/spring-surf/spring-surf-core-1.0.0.jar"/>
+	<classpathentry kind="lib" path="C:/AlfrescoSDK/alfresco-community-sdk-4.0.d/lib/server/dependencies/spring-surf/spring-surf-core-configservice-1.0.0.jar"/>
+	<classpathentry kind="lib" path="C:/AlfrescoSDK/alfresco-community-sdk-4.0.d/lib/server/dependencies/spring-surf/spring-webeditor-1.0.0.jar"/>
+	<classpathentry kind="lib" path="C:/AlfrescoSDK/alfresco-community-sdk-4.0.d/lib/server/dependencies/spring-surf/spring-webeditor-client-jsp-1.0.0.jar"/>
+	<classpathentry kind="lib" path="C:/AlfrescoSDK/alfresco-community-sdk-4.0.d/lib/server/dependencies/spring-surf/spring-webscripts-1.0.0.jar" sourcepath="C:/se-surf/spring-webscripts/spring-webscripts/src/main/java"/>
+	<classpathentry kind="lib" path="C:/AlfrescoSDK/alfresco-community-sdk-4.0.d/lib/server/dependencies/spring-surf/spring-webscripts-1.0.0-tests.jar"/>
+	<classpathentry kind="lib" path="C:/AlfrescoSDK/alfresco-community-sdk-4.0.d/lib/server/dependencies/spring-surf/spring-webscripts-api-1.0.0.jar"/>
+	<classpathentry kind="lib" path="C:/AlfrescoSDK/alfresco-community-sdk-4.0.d/lib/server/dependencies/org.springframework.context-3.0.5.RELEASE.jar"/>
+	<classpathentry kind="lib" path="C:/AlfrescoSDK/alfresco-community-sdk-4.0.d/lib/server/dependencies/org.springframework.core-3.0.5.RELEASE.jar"/>
+	<classpathentry kind="lib" path="C:/AlfrescoSDK/alfresco-community-sdk-4.0.d/lib/server/dependencies/org.springframework.web-3.0.5.RELEASE.jar"/>
+	<classpathentry kind="lib" path="C:/AlfrescoSDK/alfresco-community-sdk-4.0.d/lib/server/dependencies/org.springframework.web.servlet-3.0.5.RELEASE.jar"/>
+	<classpathentry kind="lib" path="C:/AlfrescoSDK/alfresco-community-sdk-4.0.d/lib/server/dependencies/org.springframework.beans-3.0.5.RELEASE.jar"/>
+	<classpathentry kind="lib" path="C:/AlfrescoSDK/alfresco-community-sdk-4.0.d/lib/server/dependencies/json.jar"/>
+	<classpathentry kind="lib" path="C:/AlfrescoSDK/alfresco-community-sdk-4.0.d/lib/server/dependencies/commons/commons-httpclient-3.1.jar"/>
+	<classpathentry kind="output" path="build/classes"/>
+</classpath>
