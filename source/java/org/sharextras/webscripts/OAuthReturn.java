@@ -59,6 +59,9 @@ public class OAuthReturn extends AbstractWebScript
 	ConnectorService connectorService;
 	String accessTokenUrl;
 
+	/**
+	 * Web Script constructor
+	 */
 	public OAuthReturn()
 	{
 	}
@@ -69,7 +72,8 @@ public class OAuthReturn extends AbstractWebScript
 		String verifier = req.getParameter(PARAM_OAUTH_VERIFIER),
 			connectorId = req.getParameter(PARAM_CONNECTOR_ID),
 			endpointName = req.getParameter(PARAM_ENDPOINT_ID),
-			providerName = req.getParameter(PARAM_PROVIDER_ID);
+			providerName = req.getParameter(PARAM_PROVIDER_ID),
+			reqToken = req.getParameter(HttpOAuthConnector.OAUTH_TOKEN);
 
 		if (verifier == null || verifier.length() == 0)
 		{
@@ -84,7 +88,8 @@ public class OAuthReturn extends AbstractWebScript
 			throw new WebScriptException("No provider name was specified");
 		}
 		
-		String pn = PREFS_BASE + providerName;
+		// JSON path below which data is stored, using dot notation
+		String jsonPath = PREFS_BASE + providerName + "." + PREF_DATA;
 		
 		Map<String, Object> scriptParams = this.getContainer().getScriptParameters();
 		scriptRemote = (ScriptRemote) scriptParams.get("remote");
@@ -97,45 +102,22 @@ public class OAuthReturn extends AbstractWebScript
 		String authToken = "", authTokenSecret = "";
 		
 		// Load the current auth data
-		Response authDataResp = alfrescoConnector.get(USER_TOKEN_URL + "?filter=" + pn + "." + PREF_DATA);
+		Response authDataResp = getAccessTokenData(alfrescoConnector, jsonPath);
 		if (authDataResp.getStatus().getCode() == Status.STATUS_OK)
 		{
 			String authData = authDataResp.getResponse();
-			JSONObject authObj = null;
 			Map<String, String> authParams = null;
 			try
 			{
 				if (authData.length() > 0)
 				{
-					authObj = new JSONObject(authData);
-					for (String k : pn.split("\\."))
+					String data = jsonStringByPath(authData, jsonPath);
+					if (data != null && data.length() > 0)
 					{
-						if (authObj != null)
-						{
-							try
-							{
-								authObj = authObj.getJSONObject(k);
-							}
-							catch (JSONException e)
-							{
-								authObj = null;
-							}
-						}
-					}
-					if (authObj != null && authObj.length() > 0)
-					{
-						String data = authObj.optString("data", "");
-						if (data.length() > 0)
-						{
-							Map<String, String> dataMap = this.unpackData(data);
-							// Unpack the existing parameters
-							authToken = dataMap.get(HttpOAuthConnector.OAUTH_TOKEN);
-							authTokenSecret = dataMap.get(HttpOAuthConnector.OAUTH_TOKEN_SECRET);
-						}
-						else
-						{
-							throw new WebScriptException(Status.STATUS_NOT_FOUND, "No OAuth data could be found for provider " + providerName);
-						}
+						Map<String, String> dataMap = this.unpackData(data);
+						// Unpack the existing parameters
+						authToken = dataMap.get(HttpOAuthConnector.OAUTH_TOKEN);
+						authTokenSecret = dataMap.get(HttpOAuthConnector.OAUTH_TOKEN_SECRET);
 					}
 					else
 					{
@@ -150,6 +132,10 @@ public class OAuthReturn extends AbstractWebScript
 					{
 						throw new WebScriptException(Status.STATUS_NOT_FOUND, "Request token secret could not be found");
 					}
+					if (reqToken != null && !reqToken.equals(authToken))
+					{
+						throw new WebScriptException(Status.STATUS_BAD_REQUEST, "Stored request token and returned token do not match");
+					}
 					
 					authParams = requestAccessToken(endpointName, authToken, authTokenSecret, verifier, req, oauthConnector);
 				}
@@ -162,11 +148,6 @@ public class OAuthReturn extends AbstractWebScript
 			{
 				throw new WebScriptException("Could not decode OAuth data JSON response", e);
 			}
-			/*
-			catch (ConnectorServiceException e)
-			{
-				throw new WebScriptException("Could not locate OAuth connector", e);
-			}*/
 			
 			if (authParams.size() == 0)
 			{
@@ -182,13 +163,10 @@ public class OAuthReturn extends AbstractWebScript
 			}
 			
 			// Persist the data
-			Response writeAccessTokenResponse = this.storeAccessTokenData(authParams, pn);
+			Response writeAccessTokenResponse = this.storeAccessTokenData(alfrescoConnector, jsonPath, authParams);
 			if (writeAccessTokenResponse.getStatus().getCode() == Status.STATUS_OK)
 			{
-				String redirectPage = req.getParameter(PARAM_REDIRECT_PAGE).indexOf('/') == 0 ? req.getParameter(PARAM_REDIRECT_PAGE) : "/" + req.getParameter(PARAM_REDIRECT_PAGE),
-					redirectLocation = req.getServerPath() + req.getContextPath() + (redirectPage != null ? redirectPage : "");
-				resp.addHeader(WebScriptResponse.HEADER_LOCATION, redirectLocation);
-				resp.setStatus(Status.STATUS_MOVED_TEMPORARILY);
+				executeRedirect(req, resp);
 			}
 			else
 			{
@@ -198,8 +176,15 @@ public class OAuthReturn extends AbstractWebScript
 		}
 		else
 		{
-			// TODO if resp is 401 then redirect to original page
-			throw new WebScriptException(authDataResp.getStatus().getCode(), "A problem occurred while loading the OAuth token data (code " + authDataResp.getStatus().getCode() + ")");
+			// If resp is 401 then redirect to original page
+			if (authDataResp.getStatus().getCode() == 401)
+			{
+				executeRedirect(req, resp);
+			}
+			else
+			{
+				throw new WebScriptException(authDataResp.getStatus().getCode(), "A problem occurred while loading the OAuth token data (code " + authDataResp.getStatus().getCode() + ")");
+			}
 		}
 	}
 	
@@ -225,6 +210,125 @@ public class OAuthReturn extends AbstractWebScript
 		return m;
 	}
 	
+	/**
+	 * Pack OAuth parameters into a form suitable for putting into a single string
+	 * 
+	 * @param params
+	 * @return
+	 */
+	private String packData(Map<String, String> params)
+	{
+		StringBuffer newdata = new StringBuffer();
+		// add each key,val pair to the string
+		for (Map.Entry<String, String> p : params.entrySet())
+		{
+			newdata.append(newdata.length() > 0 ? "&" : "");
+			newdata.append(p.getKey() + "=" + p.getValue());
+		}
+		return newdata.toString();
+	}
+	
+	/**
+	 * Look up a string value in some JSON mark-up, using a path expressed in dot notation
+	 * 
+	 * @param jsonSrc
+	 * @param path
+	 * @return
+	 * @throws JSONException
+	 */
+	private String jsonStringByPath(String jsonSrc, String path) throws JSONException
+	{
+		String str = null,
+			objPath = path.substring(0, path.lastIndexOf('.')),
+			strKey = path.substring(path.lastIndexOf('.') + 1);
+		JSONObject authObj = new JSONObject(jsonSrc);
+		for (String k : objPath.split("\\."))
+		{
+			if (authObj != null)
+			{
+				try
+				{
+					authObj = authObj.getJSONObject(k);
+				}
+				catch (JSONException e)
+				{
+					authObj = null;
+				}
+			}
+		}
+		if (authObj != null && authObj.length() > 0)
+		{
+			str = authObj.optString(strKey, "");
+		}
+		return str;
+	}
+	
+	/**
+	 * Load OAuth data from the repository
+	 * 
+	 * @param connector
+	 * @param path
+	 * @return
+	 */
+	private Response getAccessTokenData(ScriptRemoteConnector connector, String path)
+	{
+		return connector.get(USER_TOKEN_URL + "?filter=" + path);
+	}
+	
+	/**
+	 * Store access token data back into the repository
+	 * 
+	 * @param authParams
+	 * @param base
+	 * @return
+	 */
+	private Response storeAccessTokenData(ScriptRemoteConnector connector, String path, Map<String, String> authParams)
+	{
+		String basePath = path.substring(0, path.lastIndexOf('.')),
+			strKey = path.substring(path.lastIndexOf('.') + 1);
+		String[] baseParts = basePath.split("\\.");
+		try
+		{
+			// start main object
+			JSONWriter currJSON = new JSONStringer().object();
+			// start all outer objects
+			for (int i = 0; i < baseParts.length; i++)
+			{
+				currJSON.key(baseParts[i]).object();
+			}
+			// add string value
+			currJSON.key(strKey).value(packData(authParams));
+			// end each outer object
+			for (int i = 0; i < baseParts.length; i++)
+			{
+				currJSON.endObject();
+			}
+			// end main object
+			currJSON.endObject();
+			String postBody = currJSON.toString();
+			
+			return connector.post(USER_TOKEN_URL, postBody, Format.JSON.mimetype());
+		}
+		catch (JSONException e)
+		{
+			throw new WebScriptException("Could not encode OAuth data in JSON format", e);
+		}
+	}
+	
+	/**
+	 * Obtain a permanent access token from the OAuth service, utilising the OAuth connector to
+	 * perform the necessary signing of requests.
+	 * 
+	 * @param endpointName
+	 * @param authToken
+	 * @param authTokenSecret
+	 * @param verifier
+	 * @param req
+	 * @param oauthConnector
+	 * @return
+	 * @throws HttpException
+	 * @throws IOException
+	 */
 	private Map<String, String> requestAccessToken(
 			String endpointName, String authToken, 
 			String authTokenSecret, String verifier,
@@ -232,11 +336,8 @@ public class OAuthReturn extends AbstractWebScript
 			ScriptRemoteConnector oauthConnector) throws HttpException, IOException
 	{
 		Map<String, String> authParams;
-		// Add the verifier
-		//Connector oauthConnector = connectorService.getConnector(connectorName);
 		HttpClient client = new HttpClient();
 		
-		// TODO Parameterise the access token path
 		String postUri = req.getServerPath() + req.getContextPath() + URL_PROXY_SERVLET + "/" + endpointName + getAccessTokenUrl(oauthConnector);
 		HttpMethod method = new PostMethod(postUri);
 		method.addRequestHeader(HttpOAuthConnector.HEADER_OAUTH_DATA, HttpOAuthConnector.OAUTH_TOKEN + "=\"" + authToken + "\"," + 
@@ -257,44 +358,18 @@ public class OAuthReturn extends AbstractWebScript
 	}
 	
 	/**
-	 * Store access token data back into the repository
+	 * Redirect the user to the location that was specified in the request parameter, or
+	 * to the webapp context root if this was not found
 	 * 
-	 * @param authParams
-	 * @param base
-	 * @return
+	 * @param req
+	 * @param resp
 	 */
-	private Response storeAccessTokenData(Map<String, String> authParams, String base)
+	private void executeRedirect(WebScriptRequest req, WebScriptResponse resp)
 	{
-		ScriptRemoteConnector connector = scriptRemote.connect();
-		String[] baseParts = base.split("\\.");
-		try
-		{
-			StringBuffer newdata = new StringBuffer();
-			JSONWriter currJSON = new JSONStringer().object();
-			for (String k : baseParts)
-			{
-				currJSON.key(k).object();
-			}
-			// add each auth parameter to currJSON
-			for (Map.Entry<String, String> p : authParams.entrySet())
-			{
-				newdata.append(newdata.length() > 0 ? "&" : "");
-				newdata.append(p.getKey() + "=" + p.getValue());
-			}
-			currJSON.key(PREF_DATA).value(newdata.toString());
-			for (int i = 0; i < baseParts.length; i++)
-			{
-				currJSON.endObject();
-			}
-			currJSON.endObject();
-			String postBody = currJSON.toString();
-			
-			return connector.post(USER_TOKEN_URL, postBody, Format.JSON.mimetype());
-		}
-		catch (JSONException e)
-		{
-			throw new WebScriptException("Could not encode OAuth data in JSON format", e);
-		}
+		String redirectPage = req.getParameter(PARAM_REDIRECT_PAGE).indexOf('/') == 0 ? req.getParameter(PARAM_REDIRECT_PAGE) : "/" + req.getParameter(PARAM_REDIRECT_PAGE),
+			redirectLocation = req.getServerPath() + req.getContextPath() + (redirectPage != null ? redirectPage : "");
+		resp.addHeader(WebScriptResponse.HEADER_LOCATION, redirectLocation);
+		resp.setStatus(Status.STATUS_MOVED_TEMPORARILY);
 	}
 
 	public ScriptRemote getScriptRemote()
