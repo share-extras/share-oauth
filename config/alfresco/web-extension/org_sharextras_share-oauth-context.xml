@@ -1,0 +1,15 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE beans PUBLIC '-//SPRING//DTD BEAN//EN' 'http://www.springframework.org/dtd/spring-beans.dtd'>
+
+<beans>
+   
+    <bean id="webscript.org.sharextras.slingshot.oauth-return.get" class="org.sharextras.webscripts.OAuthReturn" parent="webscript">
+        <property name="scriptRemote">
+            <ref bean="webscripts.script.remote" />
+        </property>
+        <property name="connectorService">
+            <ref bean="connector.service" />
+        </property>
+    </bean>
+   
+</beans>

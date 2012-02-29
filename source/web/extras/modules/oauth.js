@@ -80,6 +80,15 @@ if (typeof Extras == "undefined" || !Extras)
            endpointId: "",
 
            /**
+            * Name of the Surf connector used to access the endpoint. Must be configured in the Surf layer.
+            * 
+            * @property connectorId
+            * @type string
+            * @default ""
+            */
+           connectorId: "",
+
+           /**
             * End-point relative path to the request token path resource
             * 
             * @property requestTokenPath
@@ -96,6 +105,15 @@ if (typeof Extras == "undefined" || !Extras)
             * @default "/oauth/access_token"
             */
            accessTokenPath: "/oauth/access_token",
+
+           /**
+            * Authorization URI where the user should be directed to in order to authorize the application
+            * 
+            * @property authorizationUrl
+            * @type string
+            * @default ""
+            */
+           authorizationUrl: "",
 
            /**
             * URI to redirect the user back to after a verification code has been received. Setting to null
@@ -206,12 +224,25 @@ if (typeof Extras == "undefined" || !Extras)
               authParams = {};
           
           // Add a callback if needed
-          if (this.options.requestTokenCallbackUri != null && !authParams.oauth_callback)
+          if (this.options.connectorId != null && this.options.connectorId != "")
+          {
+              authParams.oauth_callback = window.location.protocol + "//" + window.location.host + 
+                  Alfresco.constants.URL_SERVICECONTEXT + "extras/oauth/auth-return" + "?rp=" + 
+                  window.location.pathname.replace(Alfresco.constants.URL_CONTEXT, "") + 
+                  "&pid=" + this.options.providerId + "&eid=" + this.options.endpointId + "&cid=" + 
+                  this.options.connectorId;
+          }
+          else if (this.options.requestTokenCallbackUri != null && !authParams.oauth_callback)
           {
               authParams.oauth_callback = this.options.requestTokenCallbackUri;
           }
           
           var authStr = this._buildAuthData(authParams);
+          
+          var requestTokenHandler = {
+              fn: obj.requestTokenHandler && obj.requestTokenHandler.fn ? obj.requestTokenHandler.fn : this.onRequestTokenGranted, 
+              scope: obj.requestTokenHandler && obj.requestTokenHandler.scope ? obj.requestTokenHandler.scope : this
+          };
           
           var callback = 
           {
@@ -221,7 +252,7 @@ if (typeof Extras == "undefined" || !Extras)
               argument: {
                   successCallback: obj.successCallback,
                   failureCallback: obj.failureCallback,
-                  requestTokenHandler: obj.requestTokenHandler
+                  requestTokenHandler: requestTokenHandler
               }
           };
           
@@ -270,6 +301,46 @@ if (typeof Extras == "undefined" || !Extras)
           {
               Alfresco.util.PopupManager.displayMessage({
                   text: "Request token fail. Required parameters not sent."
+              });
+          }
+      },
+      
+      /**
+       * Default method to request an authorization from the 3rd party service
+       * 
+       * @method onRequestTokenGranted
+       * @param {object} obj Object literal containing properties
+       *    authParams {object} Parameters received from get token stage
+       *    onComplete {function} the callback function to be called to pass back the value provided by the user
+       */
+      onRequestTokenGranted: function OAuth_onRequestTokenGranted(obj)
+      {
+          Alfresco.util.assertNotEmpty(obj);
+          Alfresco.util.assertNotEmpty(obj.authParams);
+          Alfresco.util.assertNotEmpty(obj.onComplete);
+          
+          var authToken = obj.authParams.oauth_token,
+              callbackConfirmed = obj.authParams.oauth_callback_confirmed,
+              callbackFn = obj.onComplete,
+              authorizationUrl = this.options.authorizationUrl + "?oauth_token=" + authToken;
+          
+          if (callbackConfirmed == "true")
+          {
+              // Save the request token data
+              this.saveCredentials({
+                  successCallback: {
+                      fn: function() {
+                          // Navigate to the authorization page
+                          window.location.href = authorizationUrl;
+                      },
+                      scope: this
+                  }
+              });
+          }
+          else
+          {
+              Alfresco.util.PopupManager.displayMessage({
+                  text: "Callback was not confirmed"
               });
           }
       },
