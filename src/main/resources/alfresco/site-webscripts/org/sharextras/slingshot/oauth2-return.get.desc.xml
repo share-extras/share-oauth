@@ -1,0 +1,5 @@
+<webscript>
+    <shortname>Twitter OAuth return</shortname>
+    <description>Receive a verification code back from the Twitter OAuth service, swap it for an access token and store this</description>
+    <url>/extras/oauth/auth2-return</url>
+</webscript>

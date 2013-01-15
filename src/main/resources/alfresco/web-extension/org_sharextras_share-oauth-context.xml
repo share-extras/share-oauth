@@ -11,5 +11,11 @@
             <ref bean="connector.service" />
         </property>
     </bean>
+    
+    <bean id="webscript.org.sharextras.slingshot.oauth2-return.get" class="org.sharextras.webscripts.OAuth2Return" parent="webscript">
+        <property name="scriptRemote">
+            <ref bean="webscripts.script.remote" />
+        </property>
+    </bean>
    
 </beans>
