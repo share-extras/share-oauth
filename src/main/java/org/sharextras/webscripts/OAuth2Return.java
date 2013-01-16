@@ -35,7 +35,6 @@ public class OAuth2Return extends OAuthReturn
 {
 	/* URL fragments */
 	public static final String URL_PROXY_SERVLET = "/proxy";
-	public static final String URL_OAUTH_ACCESSTOKEN_DEFAULT = "/oauth/access_token";
 	
 	/* URL Parameter names */
     public static final String PARAM_CODE = "code";
