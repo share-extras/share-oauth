@@ -39,12 +39,12 @@ public class HttpOAuth2Connector extends HttpConnector
     
     private String getClientId()
     {
-        return descriptor.getStringProperty(OAUTH_CLIENT_ID);
+        return descriptor.getStringProperty(PARAM_CLIENT_ID);
     }
     
     private String getClientSecret()
     {
-        return descriptor.getStringProperty(OAUTH_CLIENT_SECRET);
+        return descriptor.getStringProperty(PARAM_CLIENT_SECRET);
     }
     
     public HttpOAuth2Connector(ConnectorDescriptor descriptor, String endpoint)
@@ -78,10 +78,12 @@ public class HttpOAuth2Connector extends HttpConnector
             }
             if (!reqParams.containsKey(OAUTH_CLIENT_ID))
             {
+                // TODO check getClientId() is not null
                 reqParams.put(OAUTH_CLIENT_ID, getClientId());
             }
             if (!reqParams.containsKey(OAUTH_CLIENT_SECRET))
             {
+                // TODO check getClientSecret() is not null
                 reqParams.put(OAUTH_CLIENT_SECRET, getClientSecret());
             }
             
