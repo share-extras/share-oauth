@@ -51,6 +51,8 @@ public class OAuth2Return extends OAuthReturn
     private String connectorId;
     private String endpointId;
     private String providerId;
+    private String clientId;
+    private String clientSecret;
 
 	/**
 	 * Web Script constructor
@@ -88,10 +90,6 @@ public class OAuth2Return extends OAuthReturn
 		{
 			throw new WebScriptException("No OAuth return code was found");
 		}
-		if (endpointName == null || endpointName.length() == 0)
-		{
-			throw new WebScriptException("No connector name was specified");
-		}
 		if (tokenName == null || tokenName.length() == 0)
 		{
 			throw new WebScriptException("No token name was specified");
@@ -106,6 +104,7 @@ public class OAuth2Return extends OAuthReturn
 		}
 
 		JSONObject authParams = requestAccessToken(endpointName, code, req, oauthConnector);
+		JSONObject persistParams = new JSONObject();
 		
 		if (logger.isDebugEnabled())
 		{
@@ -121,9 +120,20 @@ public class OAuth2Return extends OAuthReturn
             }
 		}
 		
+		try
+		{
+            persistParams.put("name", providerId);
+            persistParams.put("token", authParams.getString("access_token"));
+            persistParams.put("refreshToken", "");
+        }
+		catch (JSONException e)
+		{
+            throw new WebScriptException("Unable to find access token", e);
+        }
+		
 		// Persist the access token
-		String tokenUrl = "/oauth/personal/" + tokenName;
-        String postBody = authParams.toString();
+		String tokenUrl = "/oauth/token/" + tokenName;
+        String postBody = persistParams.toString();
         Response writeAccessTokenResponse = alfrescoConnector.post(tokenUrl, postBody, Format.JSON.mimetype());
 		if (writeAccessTokenResponse.getStatus().getCode() == Status.STATUS_OK)
 		{
@@ -157,7 +167,16 @@ public class OAuth2Return extends OAuthReturn
 	{
 		HttpClient client = new HttpClient();
 		
-		String postUri = req.getServerPath() + req.getContextPath() + URL_PROXY_SERVLET + "/" + endpointName + getAccessTokenUrl(oauthConnector);
+		String tokenUrl = getAccessTokenUrl(oauthConnector),
+		        postUri = endpointName != null ?
+		        req.getServerPath() + req.getContextPath() + URL_PROXY_SERVLET + "/" + 
+		        endpointName + tokenUrl : tokenUrl;
+		
+        if (logger.isDebugEnabled())
+        {
+            logger.debug("Received OAuth return code " + verifier);
+        }
+		
 		PostMethod method = new PostMethod(postUri);
 		
 		if (logger.isDebugEnabled())
@@ -165,35 +184,58 @@ public class OAuth2Return extends OAuthReturn
 		    logger.debug("Received OAuth return code " + verifier);
 		}
 		
+        String baseUrl = req.getURL();
+        if (baseUrl.indexOf('?') != -1)
+            baseUrl = baseUrl.substring(0, baseUrl.indexOf('?'));
+		
 		method.addParameter("code", verifier);
 		method.addParameter("grant_type", "authorization_code");
-		method.addParameter("redirect_uri", req.getServerPath() + req.getURL());
+		method.addParameter("redirect_uri", req.getServerPath() + baseUrl);
+		
+		// Add client ID and secret if specified in the config
+        if (clientId != null)
+        {
+            method.addParameter("client_id", clientId);
+        }
+        if (clientSecret != null)
+        {
+            method.addParameter("client_secret", clientSecret);
+        }
 		
 		int statusCode = client.executeMethod(method);
-		if (statusCode == Status.STATUS_OK)
-		{
-		    // do something with the input stream, which contains the new parameters in the body
-			byte[] responseBody = method.getResponseBody();
-		    String tokenResp = new String(responseBody, Charset.forName("UTF-8"));
-		    if (logger.isDebugEnabled())
-	        {
-	            logger.debug("Received token response " + tokenResp);
-	        }
-		    
-            try
+		
+		// errors may be {"error":"invalid_grant","error_description":"expired authorization code"}
+		// or {"error":"redirect_uri_mismatch","error_description":"redirect_uri must match configuration"}
+
+        byte[] responseBody = method.getResponseBody();
+        String tokenResp = new String(responseBody, Charset.forName("UTF-8"));
+        
+	    // do something with the input stream, which contains the new parameters in the body
+	    if (logger.isDebugEnabled())
+        {
+            logger.debug("Received token response " + tokenResp);
+        }
+	    
+        try
+        {
+            JSONObject authResponse = new JSONObject(new JSONTokener(tokenResp));
+            if (statusCode == Status.STATUS_OK)
             {
-                JSONObject authResponse = new JSONObject(new JSONTokener(tokenResp));
                 return authResponse;
             }
-            catch (JSONException e)
+            else
             {
-                throw new WebScriptException("A problem occurred parsing the JSON response from the provider");
+                String errorDesc = authResponse.getString("error_description"),
+                    errorName = authResponse.getString("error");
+                throw new WebScriptException(statusCode, "A problem occurred while requesting the access token" + 
+                        (errorDesc != null ? " - " + errorDesc : ""));
             }
-		}
-		else
-		{
-			throw new WebScriptException(statusCode, "A problem occurred while requesting the access token");
-		}
+        }
+        catch (JSONException e)
+        {
+            throw new WebScriptException("A problem occurred parsing the JSON response from the provider");
+        }
+        
 	}
 	
 	/**
@@ -205,8 +247,14 @@ public class OAuth2Return extends OAuthReturn
 	 */
 	private void executeRedirect(WebScriptRequest req, WebScriptResponse resp)
 	{
-		String redirectPage = req.getParameter(PARAM_REDIRECT_PAGE).indexOf('/') == 0 ? req.getParameter(PARAM_REDIRECT_PAGE) : "/" + req.getParameter(PARAM_REDIRECT_PAGE),
-			redirectLocation = req.getServerPath() + req.getContextPath() + (redirectPage != null ? redirectPage : "");
+	    String redirectPage = null;
+	    if (req.getParameter(PARAM_REDIRECT_PAGE) != null)
+	    {
+	        redirectPage = req.getParameter(PARAM_REDIRECT_PAGE).indexOf('/') == 0 ? 
+	                req.getParameter(PARAM_REDIRECT_PAGE) : 
+	                    "/" + req.getParameter(PARAM_REDIRECT_PAGE);
+	    }
+		String redirectLocation = req.getServerPath() + req.getContextPath() + (redirectPage != null ? redirectPage : "");
 		resp.addHeader(WebScriptResponse.HEADER_LOCATION, redirectLocation);
 		resp.setStatus(Status.STATUS_MOVED_TEMPORARILY);
 	}
@@ -225,11 +273,15 @@ public class OAuth2Return extends OAuthReturn
 	{
 		if (c != null)
 		{
+		    if (logger.isDebugEnabled())
+		        logger.debug("Connector " + c.getDescriptor().getName() + " is NOT null");
 			String tokenPath = c.getDescriptor().getStringProperty(PROP_ACCESS_TOKEN_PATH);
 			return tokenPath != null ? tokenPath : getAccessTokenUrl();
 		}
 		else
 		{
+            if (logger.isDebugEnabled())
+                logger.debug("Connector is null");
 			return getAccessTokenUrl();
 		}
 	}
@@ -262,6 +314,26 @@ public class OAuth2Return extends OAuthReturn
     public void setProviderId(String providerId)
     {
         this.providerId = providerId;
+    }
+
+    public String getClientId()
+    {
+        return clientId;
+    }
+
+    public void setClientId(String clientId)
+    {
+        this.clientId = clientId;
+    }
+
+    public String getClientSecret()
+    {
+        return clientSecret;
+    }
+
+    public void setClientSecret(String clientSecret)
+    {
+        this.clientSecret = clientSecret;
     }
 
 }

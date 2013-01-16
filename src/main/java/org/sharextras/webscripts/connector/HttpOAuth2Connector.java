@@ -75,19 +75,25 @@ public class HttpOAuth2Connector extends HttpConnector
             {
                 String k = pn.nextElement();
                 reqParams.put(k, req.getParameter(k));
+                if (logger.isDebugEnabled())
+                    logger.debug("Add request paramter " + k + "=" + req.getParameter(k));
             }
             if (!reqParams.containsKey(OAUTH_CLIENT_ID))
             {
                 // TODO check getClientId() is not null
                 reqParams.put(OAUTH_CLIENT_ID, getClientId());
+                if (logger.isDebugEnabled())
+                    logger.debug("Add client ID " + getClientId());
             }
             if (!reqParams.containsKey(OAUTH_CLIENT_SECRET))
             {
                 // TODO check getClientSecret() is not null
                 reqParams.put(OAUTH_CLIENT_SECRET, getClientSecret());
+                if (logger.isDebugEnabled())
+                    logger.debug("Add client secret " + getClientSecret());
             }
             
-            StringBuffer postStrBuffer = new StringBuffer("?");
+            StringBuffer postStrBuffer = new StringBuffer("");
             int i = 0;
             for (Map.Entry<String, String> entry : reqParams.entrySet())
             {
@@ -98,18 +104,37 @@ public class HttpOAuth2Connector extends HttpConnector
                     append(encodeParameter(entry.getValue()));
                 i ++;
             }
+            
+            String postBody = postStrBuffer.toString();
+
+            if (logger.isDebugEnabled())
+                logger.debug("Sending POST body " + postBody);
+            
+            // TODO Support non-POST requests
 
             // call client and process response
-            response = remoteClient.call(uri, postStrBuffer.toString());
-            processResponse(remoteClient, response);
+            remoteClient.setRequestContentType("application/x-www-form-urlencoded");
+            response = remoteClient.call(uri, postBody);
+            //processResponse(remoteClient, response);
+            
+            String text = response.getText();
+
+            if (logger.isDebugEnabled())
+            {
+                logger.debug("Received response code " + response.getStatus().getCode());
+                logger.debug("Received response text " + text);
+            }
+            
+            ResponseStatus status = new ResponseStatus();
+            status.setCode(response.getStatus().getCode());
+            return new Response(text, status);
         }
         else
         {
             ResponseStatus status = new ResponseStatus();
             status.setCode(ResponseStatus.STATUS_INTERNAL_SERVER_ERROR);
-            response = new Response((String) null, status);
+            return new Response((String) null, status);
         }
-        return response;
     }
     
     /**
