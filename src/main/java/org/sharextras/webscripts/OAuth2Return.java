@@ -48,6 +48,10 @@ public class OAuth2Return extends OAuthReturn
 	public static final String PROP_ACCESS_TOKEN_PATH = "access-token-path";
 
     private static Log logger = LogFactory.getLog(OAuth2Return.class);
+    
+    private String connectorId;
+    private String endpointId;
+    private String providerId;
 
 	/**
 	 * Web Script constructor
@@ -59,11 +63,28 @@ public class OAuth2Return extends OAuthReturn
 	@Override
 	public void execute(WebScriptRequest req, WebScriptResponse resp) throws IOException
 	{
-		String code = req.getParameter(PARAM_CODE),
+		String code = req.getParameter(PARAM_CODE), // mandatory
 			connectorId = req.getParameter(PARAM_CONNECTOR_ID),
 			endpointName = req.getParameter(PARAM_ENDPOINT_ID),
 			tokenName = req.getParameter(PARAM_PROVIDER_ID);
+		
+		// If values are not supplied as parameters then look these up from the script properties
+		
+		if (connectorId == null)
+		{
+		    connectorId = getConnectorId();
+		}
+        if (endpointName == null)
+        {
+            endpointName = getEndpointId();
+        }
+        if (providerId == null)
+        {
+            tokenName = getProviderId();
+        }
 
+		req.getExtensionPath();
+		
 		if (code == null || code.length() == 0)
 		{
 			throw new WebScriptException("No OAuth return code was found");
@@ -208,5 +229,35 @@ public class OAuth2Return extends OAuthReturn
 			return getAccessTokenUrl();
 		}
 	}
+
+    public String getConnectorId()
+    {
+        return connectorId;
+    }
+
+    public void setConnectorId(String connectorId)
+    {
+        this.connectorId = connectorId;
+    }
+
+    public String getEndpointId()
+    {
+        return endpointId;
+    }
+
+    public void setEndpointId(String endpointId)
+    {
+        this.endpointId = endpointId;
+    }
+
+    public String getProviderId()
+    {
+        return providerId;
+    }
+
+    public void setProviderId(String providerId)
+    {
+        this.providerId = providerId;
+    }
 
 }
