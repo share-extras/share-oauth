@@ -78,7 +78,7 @@ public class OAuth2Return extends OAuthReturn
         {
             endpointName = getEndpointId();
         }
-        if (providerId == null)
+        if (tokenName == null)
         {
             tokenName = getProviderId();
         }
@@ -176,6 +176,11 @@ public class OAuth2Return extends OAuthReturn
 		    // do something with the input stream, which contains the new parameters in the body
 			byte[] responseBody = method.getResponseBody();
 		    String tokenResp = new String(responseBody, Charset.forName("UTF-8"));
+		    if (logger.isDebugEnabled())
+	        {
+	            logger.debug("Received token response " + tokenResp);
+	        }
+		    
             try
             {
                 JSONObject authResponse = new JSONObject(new JSONTokener(tokenResp));
