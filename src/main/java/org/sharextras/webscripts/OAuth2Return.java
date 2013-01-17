@@ -12,6 +12,8 @@ import org.apache.commons.logging.LogFactory;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.json.JSONTokener;
+import org.springframework.extensions.surf.util.URLDecoder;
+import org.springframework.extensions.surf.util.URLEncoder;
 import org.springframework.extensions.webscripts.Format;
 import org.springframework.extensions.webscripts.ScriptRemote;
 import org.springframework.extensions.webscripts.ScriptRemoteConnector;
@@ -41,7 +43,8 @@ public class OAuth2Return extends OAuthReturn
 	public static final String PARAM_CONNECTOR_ID = "cid";
 	public static final String PARAM_ENDPOINT_ID = "eid";
 	public static final String PARAM_PROVIDER_ID = "pid";
-	public static final String PARAM_REDIRECT_PAGE = "rp";
+    public static final String PARAM_REDIRECT_PAGE = "rp";
+    public static final String PARAM_STATE = "state";
 	
 	/* Connector property names */
 	public static final String PROP_ACCESS_TOKEN_PATH = "access-token-path";
@@ -95,6 +98,11 @@ public class OAuth2Return extends OAuthReturn
 			throw new WebScriptException("No token name was specified");
 		}
 		
+        if (logger.isDebugEnabled())
+        {
+            logger.debug("Received OAuth return code " + code);
+        }
+		
 		Map<String, Object> scriptParams = this.getContainer().getScriptParameters();
 		scriptRemote = (ScriptRemote) scriptParams.get("remote");
 		ScriptRemoteConnector alfrescoConnector = scriptRemote.connect(), oauthConnector = null;
@@ -111,8 +119,12 @@ public class OAuth2Return extends OAuthReturn
             logger.debug("Token data returned");
             try
             {
-                logger.debug("Token: " + authParams.getString("access_token"));
-                logger.debug("URL: " + authParams.getString("instance_url"));
+                if (authParams.has("access_token"))
+                    logger.debug("access_token: " + authParams.getString("access_token"));
+                if (authParams.has("instance_url"))
+                    logger.debug("instance_url: " + authParams.getString("instance_url"));
+                if (authParams.has("refresh_token"))
+                    logger.debug("refresh_token: " + authParams.getString("refresh_token"));
             }
             catch (JSONException e)
             {
@@ -123,8 +135,14 @@ public class OAuth2Return extends OAuthReturn
 		try
 		{
             persistParams.put("name", providerId);
-            persistParams.put("token", authParams.getString("access_token"));
-            persistParams.put("refreshToken", "");
+            if (authParams.has("access_token"))
+                persistParams.put("token", authParams.getString("access_token"));
+            else
+                throw new WebScriptException("No access token was found but this is required");
+            if (authParams.has("refresh_token"))
+                persistParams.put("refreshToken", authParams.getString("refresh_token"));
+            else
+                persistParams.put("refreshToken", "");
         }
 		catch (JSONException e)
 		{
@@ -171,11 +189,6 @@ public class OAuth2Return extends OAuthReturn
 		        postUri = endpointName != null ?
 		        req.getServerPath() + req.getContextPath() + URL_PROXY_SERVLET + "/" + 
 		        endpointName + tokenUrl : tokenUrl;
-		
-        if (logger.isDebugEnabled())
-        {
-            logger.debug("Received OAuth return code " + verifier);
-        }
 		
 		PostMethod method = new PostMethod(postUri);
 		
@@ -247,14 +260,31 @@ public class OAuth2Return extends OAuthReturn
 	 */
 	private void executeRedirect(WebScriptRequest req, WebScriptResponse resp)
 	{
-	    String redirectPage = null;
+	    String redirectPage = null, state = req.getParameter(PARAM_STATE);
 	    if (req.getParameter(PARAM_REDIRECT_PAGE) != null)
 	    {
 	        redirectPage = req.getParameter(PARAM_REDIRECT_PAGE).indexOf('/') == 0 ? 
 	                req.getParameter(PARAM_REDIRECT_PAGE) : 
 	                    "/" + req.getParameter(PARAM_REDIRECT_PAGE);
 	    }
+	    else if (state != null) // TODO extract into utility method
+	    {
+            if (logger.isDebugEnabled())
+                logger.debug("Found state: " + state);
+            String rp = null;
+            String[] parts = state.split("&");
+            for (String s : parts) {
+                String[] pair = s.split("=");
+                if (pair.length == 2)
+                    if (PARAM_REDIRECT_PAGE.equals(URLDecoder.decode(pair[0])))
+                        rp = URLDecoder.decode(pair[1]);
+            }
+            if (rp != null)
+                redirectPage = rp.indexOf('/') == 0 ? rp : "/" + rp;
+	    }
 		String redirectLocation = req.getServerPath() + req.getContextPath() + (redirectPage != null ? redirectPage : "");
+        if (logger.isDebugEnabled())
+            logger.debug("Redirecting user to URL " + redirectLocation);
 		resp.addHeader(WebScriptResponse.HEADER_LOCATION, redirectLocation);
 		resp.setStatus(Status.STATUS_MOVED_TEMPORARILY);
 	}
