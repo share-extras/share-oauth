@@ -8,6 +8,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 import org.springframework.extensions.surf.exception.AuthenticationException;
 import org.springframework.extensions.surf.util.URLEncoder;
+import org.springframework.extensions.webscripts.Status;
 import org.springframework.extensions.webscripts.connector.AbstractAuthenticator;
 import org.springframework.extensions.webscripts.connector.ConnectorSession;
 import org.springframework.extensions.webscripts.connector.Credentials;
@@ -55,7 +56,7 @@ public class OAuth2Authenticator extends AbstractAuthenticator
             Response response = remoteClient.call(getRequestTokenUri(), body);
             
             // read back the ticket
-            if (response.getStatus().getCode() == 200)
+            if (response.getStatus().getCode() == Status.STATUS_OK)
             {
                 String accessToken;
                 try
