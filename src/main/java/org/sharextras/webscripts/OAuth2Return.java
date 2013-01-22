@@ -2,7 +2,8 @@ package org.sharextras.webscripts;
 
 import java.io.IOException;
 import java.nio.charset.Charset;
-import java.util.Map;
+
+import javax.servlet.http.HttpSession;
 
 import org.apache.commons.httpclient.HttpClient;
 import org.apache.commons.httpclient.HttpException;
@@ -12,16 +13,21 @@ import org.apache.commons.logging.LogFactory;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.json.JSONTokener;
+import org.sharextras.webscripts.connector.OAuth2Credentials;
+import org.springframework.extensions.surf.RequestContext;
+import org.springframework.extensions.surf.ServletUtil;
+import org.springframework.extensions.surf.exception.CredentialVaultProviderException;
+import org.springframework.extensions.surf.support.ThreadLocalRequestContext;
 import org.springframework.extensions.surf.util.URLDecoder;
-import org.springframework.extensions.surf.util.URLEncoder;
-import org.springframework.extensions.webscripts.Format;
-import org.springframework.extensions.webscripts.ScriptRemote;
-import org.springframework.extensions.webscripts.ScriptRemoteConnector;
+import org.springframework.extensions.webscripts.AbstractWebScript;
 import org.springframework.extensions.webscripts.Status;
 import org.springframework.extensions.webscripts.WebScriptException;
 import org.springframework.extensions.webscripts.WebScriptRequest;
 import org.springframework.extensions.webscripts.WebScriptResponse;
-import org.springframework.extensions.webscripts.connector.Response;
+import org.springframework.extensions.webscripts.connector.ConnectorService;
+import org.springframework.extensions.webscripts.connector.CredentialVault;
+import org.springframework.extensions.webscripts.connector.Credentials;
+import org.springframework.extensions.webscripts.connector.User;
 
 /**
  * Landing page web script for returning from a 3rd party OAuth 2.0 authorization page.
@@ -33,7 +39,7 @@ import org.springframework.extensions.webscripts.connector.Response;
  * 
  * @author Will Abson
  */
-public class OAuth2Return extends OAuthReturn
+public class OAuth2Return extends AbstractWebScript
 {
 	/* URL fragments */
 	public static final String URL_PROXY_SERVLET = "/proxy";
@@ -48,6 +54,9 @@ public class OAuth2Return extends OAuthReturn
 	
 	/* Connector property names */
 	public static final String PROP_ACCESS_TOKEN_PATH = "access-token-path";
+	
+	/* Value provider class */
+	public static final String VAULT_PROVIDER_ID = "org.sharextras.webscripts.connector.OAuth2CredentialVaultProvider";
 
     private static Log logger = LogFactory.getLog(OAuth2Return.class);
     
@@ -56,6 +65,9 @@ public class OAuth2Return extends OAuthReturn
     private String providerId;
     private String clientId;
     private String clientSecret;
+    private String accessTokenUrl;
+    
+    private ConnectorService connectorService;
 
 	/**
 	 * Web Script constructor
@@ -102,65 +114,69 @@ public class OAuth2Return extends OAuthReturn
         {
             logger.debug("Received OAuth return code " + code);
         }
-		
-		Map<String, Object> scriptParams = this.getContainer().getScriptParameters();
-		scriptRemote = (ScriptRemote) scriptParams.get("remote");
-		ScriptRemoteConnector alfrescoConnector = scriptRemote.connect(), oauthConnector = null;
-		if (connectorId != null && connectorId.length() > 0)
-		{
-			oauthConnector = scriptRemote.connect(connectorId);
-		}
+        
+        RequestContext context = ThreadLocalRequestContext.getRequestContext();
+        User user = context.getUser();
+        String userId = user.getId();
+        HttpSession httpSession = ServletUtil.getSession();
+        CredentialVault credentialVault;
+        try
+        {
+            credentialVault = connectorService.getCredentialVault(httpSession, userId, VAULT_PROVIDER_ID);
+        }
+        catch (CredentialVaultProviderException e)
+        {
+            throw new WebScriptException("Unable to obtain credential vault for OAuth credentials", e);
+        }
 
-		JSONObject authParams = requestAccessToken(endpointName, code, req, oauthConnector);
-		JSONObject persistParams = new JSONObject();
+        String accessToken = null, refreshToken = "";
+        
+        // TODO return a map or object, not a JSON object here
+		JSONObject authParams = requestAccessToken(null, code, req);
 		
 		if (logger.isDebugEnabled())
 		{
             logger.debug("Token data returned");
             try
             {
+                // TODO use constants for parameter names
                 if (authParams.has("access_token"))
+                {
                     logger.debug("access_token: " + authParams.getString("access_token"));
+                    accessToken = authParams.getString("access_token");
+                }
                 if (authParams.has("instance_url"))
+                {
                     logger.debug("instance_url: " + authParams.getString("instance_url"));
+                }
                 if (authParams.has("refresh_token"))
+                {
                     logger.debug("refresh_token: " + authParams.getString("refresh_token"));
+                    refreshToken = authParams.getString("refresh_token");
+                }
             }
             catch (JSONException e)
             {
-                e.printStackTrace();
+                throw new WebScriptException("Error parsing access token response", e);
             }
 		}
 		
-		try
+		if (accessToken == null)
 		{
-            persistParams.put("name", providerId);
-            if (authParams.has("access_token"))
-                persistParams.put("token", authParams.getString("access_token"));
-            else
-                throw new WebScriptException("No access token was found but this is required");
-            if (authParams.has("refresh_token"))
-                persistParams.put("refreshToken", authParams.getString("refresh_token"));
-            else
-                persistParams.put("refreshToken", "");
-        }
-		catch (JSONException e)
-		{
-            throw new WebScriptException("Unable to find access token", e);
-        }
+	        throw new WebScriptException("No access token was found but this is required");
+		}
 		
 		// Persist the access token
-		String tokenUrl = "/oauth/token/" + tokenName;
-        String postBody = persistParams.toString();
-        Response writeAccessTokenResponse = alfrescoConnector.post(tokenUrl, postBody, Format.JSON.mimetype());
-		if (writeAccessTokenResponse.getStatus().getCode() == Status.STATUS_OK)
+		Credentials c = credentialVault.retrieve(endpointName);
+		if (c == null)
 		{
-			executeRedirect(req, resp);
+		    c = credentialVault.newCredentials(endpointName);
 		}
-		else
-		{
-			throw new WebScriptException("A problem occurred while persisting the OAuth token data");
-		}
+        c.setProperty(OAuth2Credentials.CREDENTIAL_ACCESS_TOKEN, accessToken);
+        c.setProperty(OAuth2Credentials.CREDENTIAL_REFRESH_TOKEN, refreshToken);
+        credentialVault.save();
+        
+		executeRedirect(req, resp);
 	}
 	
 	/**
@@ -180,12 +196,13 @@ public class OAuth2Return extends OAuthReturn
 	private JSONObject requestAccessToken(
 			String endpointName, 
 			String verifier,
-			WebScriptRequest req,
-			ScriptRemoteConnector oauthConnector) throws HttpException, IOException
+			WebScriptRequest req) throws HttpException, IOException
 	{
+	    // TODO use an endpoint to make this connection
+	    
 		HttpClient client = new HttpClient();
 		
-		String tokenUrl = getAccessTokenUrl(oauthConnector),
+		String tokenUrl = getAccessTokenUrl(),
 		        postUri = endpointName != null ?
 		        req.getServerPath() + req.getContextPath() + URL_PROXY_SERVLET + "/" + 
 		        endpointName + tokenUrl : tokenUrl;
@@ -289,33 +306,6 @@ public class OAuth2Return extends OAuthReturn
 		resp.setStatus(Status.STATUS_MOVED_TEMPORARILY);
 	}
 
-	public ScriptRemote getScriptRemote()
-	{
-		return scriptRemote;
-	}
-
-	public void setScriptRemote(ScriptRemote scriptRemote)
-	{
-		this.scriptRemote = scriptRemote;
-	}
-	
-	public String getAccessTokenUrl(ScriptRemoteConnector c)
-	{
-		if (c != null)
-		{
-		    if (logger.isDebugEnabled())
-		        logger.debug("Connector " + c.getDescriptor().getName() + " is NOT null");
-			String tokenPath = c.getDescriptor().getStringProperty(PROP_ACCESS_TOKEN_PATH);
-			return tokenPath != null ? tokenPath : getAccessTokenUrl();
-		}
-		else
-		{
-            if (logger.isDebugEnabled())
-                logger.debug("Connector is null");
-			return getAccessTokenUrl();
-		}
-	}
-
     public String getConnectorId()
     {
         return connectorId;
@@ -364,6 +354,16 @@ public class OAuth2Return extends OAuthReturn
     public void setClientSecret(String clientSecret)
     {
         this.clientSecret = clientSecret;
+    }
+    
+    public String getAccessTokenUrl()
+    {
+        return accessTokenUrl;
+    }
+
+    public void setAccessTokenUrl(String accessTokenUrl)
+    {
+        this.accessTokenUrl = accessTokenUrl;
     }
 
 }
