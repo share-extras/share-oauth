@@ -6,7 +6,7 @@
 	<artifactId>share-oauth</artifactId>
 	<packaging>jar</packaging>
 	<version>2.3-SNAPSHOT</version>
-	<name>ShareOAuth project</name>
+	<name>Share OAuth</name>
 	<url>http://sharextras.org</url>
 	<!-- New Alfresco Maven Community Repository instance, pro -->
 	<repositories>
