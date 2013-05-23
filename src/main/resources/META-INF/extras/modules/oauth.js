@@ -257,6 +257,11 @@ if (typeof Extras == "undefined" || !Extras)
           };
           
           YAHOO.util.Connect.initHeader("X-OAuth-Data", authStr);
+          // Add CSRF token if present
+          if (Alfresco.util.CSRFPolicy && Alfresco.util.CSRFPolicy.isFilterEnabled())
+          {
+              YAHOO.util.Connect.initHeader(Alfresco.util.CSRFPolicy.getHeader(), Alfresco.util.CSRFPolicy.getToken());
+          }
           YAHOO.util.Connect.asyncRequest("POST", requestTokenUrl, callback, "");
       },
       
@@ -391,6 +396,11 @@ if (typeof Extras == "undefined" || !Extras)
           };
           
           YAHOO.util.Connect.initHeader("X-OAuth-Data", authStr);
+          // Add CSRF token if present
+          if (Alfresco.util.CSRFPolicy && Alfresco.util.CSRFPolicy.isFilterEnabled())
+          {
+              YAHOO.util.Connect.initHeader(Alfresco.util.CSRFPolicy.getHeader(), Alfresco.util.CSRFPolicy.getToken());
+          }
           YAHOO.util.Connect.asyncRequest("POST", requestTokenUrl, callback, "");
       },
       
@@ -670,6 +680,11 @@ if (typeof Extras == "undefined" || !Extras)
           };
 
           YAHOO.util.Connect.initHeader("X-OAuth-Data", authStr);
+          // Add CSRF token if present
+          if (Alfresco.util.CSRFPolicy && Alfresco.util.CSRFPolicy.isFilterEnabled())
+          {
+              YAHOO.util.Connect.initHeader(Alfresco.util.CSRFPolicy.getHeader(), Alfresco.util.CSRFPolicy.getToken());
+          }
           if (typeof obj.requestContentType != "undefined")
           {
               YAHOO.util.Connect.setDefaultPostHeader(obj.requestContentType);
