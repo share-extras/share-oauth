@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>org.sharextras</groupId>
 	<artifactId>share-oauth</artifactId>
@@ -8,6 +9,21 @@
 	<version>2.3-SNAPSHOT</version>
 	<name>Share OAuth</name>
 	<url>http://sharextras.org</url>
+
+	<properties>
+		<buildnumber>SNAPSHOT</buildnumber>
+		<alfresco.groupId>org.alfresco</alfresco.groupId>
+		<alfresco.version>4.2.d-SNAPSHOT</alfresco.version>
+		<!-- This controls which properties will be picked in src/test/properties for embedded run -->
+		<env>local</env>
+	</properties>
+
+	<parent>
+		<groupId>org.alfresco.maven</groupId>
+		<artifactId>alfresco-sdk-parent</artifactId>
+		<version>1.0.1</version>
+	</parent>
+
 	<!-- New Alfresco Maven Community Repository instance, pro -->
 	<repositories>
 		<repository>
@@ -23,6 +39,7 @@
 			</snapshots>
 		</repository>
 	</repositories>
+
 	<dependencies>
 		<dependency>
 			<groupId>junit</groupId>
@@ -32,9 +49,9 @@
 		</dependency>
 		<!-- Spring Surf dependencies are available via proxy via maven.alfresco.com so just add them below -->
 		<dependency>
-		    <groupId>org.springframework.extensions.surf</groupId>
-		    <artifactId>spring-surf-api</artifactId>
-		    <version>1.2.0-M3</version>
+			<groupId>org.springframework.extensions.surf</groupId>
+			<artifactId>spring-surf-api</artifactId>
+			<version>1.2.0-M3</version>
 		</dependency>
 		<dependency>
 		    <groupId>org.springframework.extensions.surf</groupId>
@@ -42,35 +59,21 @@
 		    <version>1.2.0-M3</version>
 		</dependency>
 		<dependency>
-		    <groupId>org.springframework.extensions.surf</groupId>
-		    <artifactId>spring-webscripts</artifactId>
-		    <version>1.2.0-M3</version>
+			<groupId>org.springframework.extensions.surf</groupId>
+			<artifactId>spring-webscripts</artifactId>
+			<version>1.2.0-M3</version>
 		</dependency>
 		<dependency>
-		    <groupId>javax.servlet</groupId>
-		    <artifactId>javax.servlet-api</artifactId>
-		    <version>3.0.1</version>
-		    <scope>provided</scope>
+		<groupId>javax.servlet</groupId>
+			<artifactId>javax.servlet-api</artifactId>
+			<version>3.0.1</version>
+			<scope>provided</scope>
 		</dependency>
+		<dependency>
+			<groupId>org.springframework</groupId>
+			<artifactId>spring-context</artifactId>
+			<version>3.1.2.RELEASE</version>
+			</dependency> 
 	</dependencies>
-    <build>
-        <plugins>
-             <!-- Needed for cross OS compatibility in acp/zip encoding -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-resources-plugin</artifactId>
-                <version>2.5</version>
-                <configuration>
-                    <encoding>UTF-8</encoding>
-                    <!-- By default as per http://code.google.com/p/maven-alfresco-archetypes/issues/detail?id=7 FTL are not filtered to avoid corruption.
-                        | This behavior can be relaxed (in case filtering is needed in the FTLs) by selecting which files are filtered and which not as described 
-                        | here http://code.google.com/p/maven-alfresco-archetypes/issues/detail?id=7#c3
-                        -->
-                    <nonFilteredFileExtensions>
-                        <nonFilteredFileExtension>ftl</nonFilteredFileExtension>
-                    </nonFilteredFileExtensions>
-                </configuration>
-            </plugin>
-        </plugins>
-    </build>
+
 </project>
