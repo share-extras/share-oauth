@@ -75,5 +75,18 @@
 			<version>3.1.2.RELEASE</version>
 			</dependency> 
 	</dependencies>
+        <distributionManagement>
+            <repository>
+                <id>alfresco-artifacts</id>
+                <name>Alfresco Share Extras Release Repository</name>
+                <url>https://artifacts.alfresco.com/nexus/content/repositories/share-extras</url>
+                <layout>default</layout>
+            </repository>
+            <snapshotRepository>
+                <id>alfresco-artifacts-snapshots</id>
+                <name>Alfresco Share Extras Snapshot Repository</name>
+                <url>https://artifacts.alfresco.com/nexus/content/repositories/share-extras-snapshots</url>
+            </snapshotRepository>
+  </distributionManagement>
 
 </project>
