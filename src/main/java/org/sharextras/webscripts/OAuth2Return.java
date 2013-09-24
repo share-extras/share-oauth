@@ -56,13 +56,11 @@ public class OAuth2Return extends AbstractWebScript
 	public static final String PROP_ACCESS_TOKEN_PATH = "access-token-path";
 	
 	/* Value provider class */
-	public static final String VAULT_PROVIDER_ID = "org.sharextras.webscripts.connector.OAuth2CredentialVaultProvider";
+	public static final String VAULT_PROVIDER_ID = "oAuth2CredentialVaultProvider";
 
     private static Log logger = LogFactory.getLog(OAuth2Return.class);
     
-    private String connectorId;
     private String endpointId;
-    private String providerId;
     private String clientId;
     private String clientSecret;
     private String accessTokenUrl;
@@ -80,23 +78,14 @@ public class OAuth2Return extends AbstractWebScript
 	public void execute(WebScriptRequest req, WebScriptResponse resp) throws IOException
 	{
 		String code = req.getParameter(PARAM_CODE), // mandatory
-			connectorId = req.getParameter(PARAM_CONNECTOR_ID),
 			endpointName = req.getParameter(PARAM_ENDPOINT_ID),
 			tokenName = req.getParameter(PARAM_PROVIDER_ID);
 		
 		// If values are not supplied as parameters then look these up from the script properties
 		
-		if (connectorId == null)
-		{
-		    connectorId = getConnectorId();
-		}
         if (endpointName == null)
         {
             endpointName = getEndpointId();
-        }
-        if (tokenName == null)
-        {
-            tokenName = getProviderId();
         }
 
 		req.getExtensionPath();
@@ -255,6 +244,7 @@ public class OAuth2Return extends AbstractWebScript
             }
             else
             {
+                @SuppressWarnings("unused")
                 String errorDesc = authResponse.getString("error_description"),
                     errorName = authResponse.getString("error");
                 throw new WebScriptException(statusCode, "A problem occurred while requesting the access token" + 
@@ -306,16 +296,6 @@ public class OAuth2Return extends AbstractWebScript
 		resp.setStatus(Status.STATUS_MOVED_TEMPORARILY);
 	}
 
-    public String getConnectorId()
-    {
-        return connectorId;
-    }
-
-    public void setConnectorId(String connectorId)
-    {
-        this.connectorId = connectorId;
-    }
-
     public String getEndpointId()
     {
         return endpointId;
@@ -324,16 +304,6 @@ public class OAuth2Return extends AbstractWebScript
     public void setEndpointId(String endpointId)
     {
         this.endpointId = endpointId;
-    }
-
-    public String getProviderId()
-    {
-        return providerId;
-    }
-
-    public void setProviderId(String providerId)
-    {
-        this.providerId = providerId;
     }
 
     public String getClientId()
@@ -364,6 +334,16 @@ public class OAuth2Return extends AbstractWebScript
     public void setAccessTokenUrl(String accessTokenUrl)
     {
         this.accessTokenUrl = accessTokenUrl;
+    }
+
+    public ConnectorService getConnectorService()
+    {
+        return connectorService;
+    }
+
+    public void setConnectorService(ConnectorService connectorService)
+    {
+        this.connectorService = connectorService;
     }
 
 }

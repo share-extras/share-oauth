@@ -76,6 +76,8 @@ public class AuthorizationPassthruConnector extends HttpConnector
             
             // call client and process response
             response = remoteClient.call(uri, req, res);
+            if (logger.isDebugEnabled())
+                logger.debug("Got response code " + response.getStatus().getCode() + ", body:\n" + response.getResponse());
             processResponse(remoteClient, response);
         }
         else

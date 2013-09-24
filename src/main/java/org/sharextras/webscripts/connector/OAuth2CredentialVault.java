@@ -1,19 +1,28 @@
 package org.sharextras.webscripts.connector;
 
+import java.io.ByteArrayInputStream;
+import java.io.UnsupportedEncodingException;
 import java.util.Iterator;
+
+import javax.servlet.http.HttpSession;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.json.JSONTokener;
-import org.springframework.context.ApplicationContext;
+import org.springframework.extensions.surf.RequestContext;
+import org.springframework.extensions.surf.ServletUtil;
+import org.springframework.extensions.surf.exception.ConnectorServiceException;
+import org.springframework.extensions.surf.support.ThreadLocalRequestContext;
 import org.springframework.extensions.webscripts.Format;
 import org.springframework.extensions.webscripts.Status;
+import org.springframework.extensions.webscripts.connector.Connector;
+import org.springframework.extensions.webscripts.connector.ConnectorService;
 import org.springframework.extensions.webscripts.connector.Credentials;
-import org.springframework.extensions.webscripts.connector.RemoteClient;
 import org.springframework.extensions.webscripts.connector.Response;
 import org.springframework.extensions.webscripts.connector.SimpleCredentialVault;
+import org.springframework.extensions.webscripts.connector.User;
 
 /**
  * Vault for storing OAuth 2.0 credentials (an access token and an optional refresh token)
@@ -36,10 +45,7 @@ public class OAuth2CredentialVault extends SimpleCredentialVault
     
     private static final long serialVersionUID = 4009102141325723492L;
     
-    private ApplicationContext applicationContext;
-    
-    /** RemoteClient base bean used to clone beans for use in Authenticators */
-    private static ThreadLocal<RemoteClient> remoteClientBase = new ThreadLocal<RemoteClient>();
+    private ConnectorService connectorService;
 
     public OAuth2CredentialVault(String id)
     {
@@ -55,6 +61,7 @@ public class OAuth2CredentialVault extends SimpleCredentialVault
     @Override
     public Credentials retrieve(String endpointId)
     {
+        logger.debug("Retrieving credentials");
         Credentials credentials = super.retrieve(endpointId);
         if (credentials == null)
         {
@@ -75,139 +82,158 @@ public class OAuth2CredentialVault extends SimpleCredentialVault
 
     private boolean load(String endpoint)
     {
-        // build a new remote client
-        RemoteClient remoteClient = buildRemoteClient(ENDPOINT_ALFRESCO);
-        
-        String providerId = PROVIDER_PREFIX + endpoint, 
-                tokenUrl = API_STORE_TOKEN + "/" + providerId;
+        RequestContext context = ThreadLocalRequestContext.getRequestContext();
+        User user = context.getUser();
+        String userId = user.getId();
+        HttpSession httpSession = ServletUtil.getSession();
+        return load(endpoint, httpSession, userId);
+    }
 
-        Response response = remoteClient.call(tokenUrl);
-        
-        if (response.getStatus().getCode() == Status.STATUS_OK)
+    private boolean load(String endpoint, HttpSession session, String userId)
+    {
+        // build a new remote client
+        try
         {
-            if (response.getEncoding() == Format.JSON.mimetype())
+            Connector alfrescoConnector = connectorService.getConnector(ENDPOINT_ALFRESCO, userId, session);
+            String providerId = PROVIDER_PREFIX + endpoint, 
+                    tokenUrl = API_STORE_TOKEN + "/" + providerId;
+
+            Response response = alfrescoConnector.call(tokenUrl);
+            
+            if (response.getStatus().getCode() == Status.STATUS_OK)
             {
-                try
+                if (response.getEncoding() == Format.JSON.mimetype())
                 {
-                    JSONObject jsonObject = new JSONObject(new JSONTokener(response.getText()));
-                    String accessToken = jsonObject.getString(JSON_PROP_ACCESS_TOKEN), refreshToken = null;
-                    if (jsonObject.has(JSON_PROP_REFRESH_TOKEN) && !"".equals(jsonObject.getString(JSON_PROP_REFRESH_TOKEN)))
+                    try
                     {
-                        refreshToken = jsonObject.getString(JSON_PROP_REFRESH_TOKEN);
+                        JSONObject jsonObject = new JSONObject(new JSONTokener(response.getText()));
+                        String accessToken = jsonObject.getString(JSON_PROP_ACCESS_TOKEN), refreshToken = null;
+                        if (jsonObject.has(JSON_PROP_REFRESH_TOKEN) && !"".equals(jsonObject.getString(JSON_PROP_REFRESH_TOKEN)))
+                        {
+                            refreshToken = jsonObject.getString(JSON_PROP_REFRESH_TOKEN);
+                        }
+                        Credentials credentials = newCredentials(endpoint);
+                        credentials.setProperty(OAuth2Credentials.CREDENTIAL_ACCESS_TOKEN, accessToken);
+                        credentials.setProperty(OAuth2Credentials.CREDENTIAL_REFRESH_TOKEN, refreshToken);
                     }
-                    Credentials credentials = newCredentials(endpoint);
-                    credentials.setProperty(OAuth2Credentials.CREDENTIAL_ACCESS_TOKEN, accessToken);
-                    credentials.setProperty(OAuth2Credentials.CREDENTIAL_REFRESH_TOKEN, refreshToken);
+                    catch (JSONException e)
+                    {
+                        // TODO throw an exception
+                    }
                 }
-                catch (JSONException e)
+                else
                 {
                     // TODO throw an exception
                 }
             }
-            else
-            {
-                // TODO throw an exception
-            }
+            
+            return true;
+        }
+        catch (ConnectorServiceException e1)
+        {
+            // TODO Auto-generated catch block
+            e1.printStackTrace();
+            return false;
         }
         
-        return true;
     }
-
+    
     @Override
     public boolean save()
     {
+        RequestContext context = ThreadLocalRequestContext.getRequestContext();
+        User user = context.getUser();
+        String userId = user.getId();
+        HttpSession httpSession = ServletUtil.getSession();
+        return save(httpSession, userId);
+    }
+
+    public boolean save(HttpSession session, String userId)
+    {
         boolean status = true;
         
-        // build a new remote client
-        RemoteClient remoteClient = buildRemoteClient(ENDPOINT_ALFRESCO);
-        
-        // walk through all of the endpoints
-        Iterator<String> it = credentialsMap.keySet().iterator();
-        while(it.hasNext())
-        {
-            remoteClient.setRequestContentType(Format.JSON.mimetype());
-            
-            String endpointId = (String) it.next(), 
-                    providerId = PROVIDER_PREFIX + endpointId, token = "", refreshToken = "";
-            
-            Credentials credentials = retrieve(endpointId);
-
-            token = (String) credentials.getProperty(OAuth2Credentials.CREDENTIAL_ACCESS_TOKEN);
-            refreshToken = (String) credentials.getProperty(OAuth2Credentials.CREDENTIAL_REFRESH_TOKEN);
-            
-            // TODO check that access token and refresh token have values
-
-            JSONObject persistParams = new JSONObject();
-            try
-            {
-                persistParams.put(JSON_PROP_PROVIDER_ID, providerId);
-                persistParams.put(JSON_PROP_ACCESS_TOKEN, token);
-                persistParams.put(JSON_PROP_REFRESH_TOKEN, refreshToken);
-            }
-            catch (JSONException e)
-            {
-                // TODO Throw an exception of the correct type
-                status = false;
-            }
-            
-            // Persist the access token
-            String tokenUrl = API_STORE_TOKEN + "/" + providerId;
-            String postBody = persistParams.toString();
-            
-            Response response = remoteClient.call(tokenUrl, postBody);
-            
-            // read back the ticket
-            if (response.getStatus().getCode() != Status.STATUS_OK)
-            {
-                status = false;
-                
-                if (logger.isDebugEnabled())
-                    logger.debug("Could not store OAuth 2.0 credentials, received response code: " + response.getStatus().getCode());  
-                return false;          
-            }
-        }
-        return status;
-    }
-    
-    /**
-     * Build a Remote Client instance by retrieving and configuring the "connector.remoteclient" bean.
-     * 
-     * Copied from class org.springframework.extensions.webscripts.connector.AbstractAuthenticator
-     * 
-     * @param endpoint  Configured Endpoint ID for the remote client instance
-     */
-    protected RemoteClient buildRemoteClient(String endpoint)
-    {
-        RemoteClient client = this.remoteClientBase.get();
-        if (client == null)
-        {
-            // get the Remote Client prototype bean from Spring
-            if (this.applicationContext == null)
-            {
-                throw new IllegalStateException("Application Context must be set programatically for Authenticator.");
-            }
-            client = (RemoteClient)this.applicationContext.getBean("connector.remoteclient");
-            if (client == null)
-            {
-                throw new IllegalStateException("The 'connector.remoteclient' bean is required by the WebScript framework.");
-            }
-            // set the object used to clone further bean instances
-            this.remoteClientBase.set(client);
-        }
         try
         {
-            // perform the bean clone from the base instance
-            client = (RemoteClient)client.clone();
+            Connector alfrescoConnector = connectorService.getConnector(ENDPOINT_ALFRESCO, userId, session);
+            
+            // walk through all of the endpoints
+            Iterator<String> it = credentialsMap.keySet().iterator();
+            while(it.hasNext())
+            {
+                //remoteClient.setRequestContentType(Format.JSON.mimetype());
+                
+                String endpointId = (String) it.next(), 
+                        providerId = PROVIDER_PREFIX + endpointId, token = "", refreshToken = "";
+                
+                Credentials credentials = retrieve(endpointId);
+
+                token = (String) credentials.getProperty(OAuth2Credentials.CREDENTIAL_ACCESS_TOKEN);
+                refreshToken = (String) credentials.getProperty(OAuth2Credentials.CREDENTIAL_REFRESH_TOKEN);
+                
+                // TODO check that access token and refresh token have values
+
+                JSONObject persistParams = new JSONObject();
+                try
+                {
+                    persistParams.put(JSON_PROP_PROVIDER_ID, providerId);
+                    persistParams.put(JSON_PROP_ACCESS_TOKEN, token);
+                    persistParams.put(JSON_PROP_REFRESH_TOKEN, refreshToken);
+                }
+                catch (JSONException e)
+                {
+                    // TODO Throw an exception of the correct type
+                    status = false;
+                }
+                
+                // Persist the access token
+                String tokenUrl = API_STORE_TOKEN + "/" + providerId;
+                String postBody = persistParams.toString();
+                
+                if (logger.isDebugEnabled())
+                    logger.debug("Sending token data:\n" + postBody);  
+                
+                Response response = alfrescoConnector.call(tokenUrl, null, new ByteArrayInputStream(postBody.getBytes("UTF-8")));
+                
+                // read back the ticket
+                if (response.getStatus().getCode() != Status.STATUS_OK)
+                {
+                    status = false;
+                    
+                    if (logger.isDebugEnabled())
+                        logger.debug("Could not store OAuth 2.0 credentials, received response code: " + response.getStatus().getCode());
+                    return false;          
+                }
+                else
+                {
+                    if (logger.isDebugEnabled())
+                        logger.debug("Stored credentials successfully");  
+                }
+            }
+            return status;
+            
         }
-        catch (CloneNotSupportedException e)
+        catch (ConnectorServiceException e1)
         {
-            throw new IllegalStateException("RemoteClient must support clone() method.");
+            // TODO Auto-generated catch block
+            e1.printStackTrace();
+            return false;
         }
-        
-        // set the appropriate endpoint ID state for this RemoteClient instance
-        client.setEndpoint(endpoint);
-        
-        return client;
+        catch (UnsupportedEncodingException e)
+        {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+            return false;
+        }
+    }
+    
+    public ConnectorService getConnectorService()
+    {
+        return connectorService;
+    }
+
+    public void setConnectorService(ConnectorService connectorService)
+    {
+        this.connectorService = connectorService;
     }
 
 }

@@ -1,0 +1,14 @@
+<alfresco-config>
+
+    <config evaluator="string-compare" condition="Remote">
+        <remote>
+            <connector>
+                <id>oauth-token-passthru</id>
+                <name>OAuth Authentication Proxy Connector</name>
+                <description>HTTP Connector which will populate the Authorization header from the value of X-OAuth-Token</description>
+                <class>org.sharextras.webscripts.connector.AuthorizationPassthruConnector</class>
+            </connector>
+        </remote>
+    </config>
+
+</alfresco-config>

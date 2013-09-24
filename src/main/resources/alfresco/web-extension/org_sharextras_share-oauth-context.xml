@@ -3,6 +3,7 @@
 
 <beans>
    
+    <!-- Web script to receive OAuth 1.0a verification codes -->
     <bean id="webscript.org.sharextras.slingshot.oauth-return.get" class="org.sharextras.webscripts.OAuthReturn" parent="webscript">
         <property name="scriptRemote">
             <ref bean="webscripts.script.remote" />
@@ -12,7 +13,20 @@
         </property>
     </bean>
     
+    <!--
+    Web script to receive OAuth 2.0 verification codes, exchange them for an access token and store this to the credential store
+    This must be extended to add the required properties for the specific service provider being used and cannot be used directly.
+    -->
     <bean id="webscript.org.sharextras.slingshot.oauth2-return.get" class="org.sharextras.webscripts.OAuth2Return" parent="webscript">
+        <property name="connectorService">
+            <ref bean="connector.service" />
+        </property>
+    </bean>
+    
+    <bean id="oAuth2CredentialVaultProvider" class="org.sharextras.webscripts.connector.OAuth2CredentialVaultProvider">
+        <property name="connectorService">
+            <ref bean="connector.service" />
+        </property>
     </bean>
    
 </beans>
