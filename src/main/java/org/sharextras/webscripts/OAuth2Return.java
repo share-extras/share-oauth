@@ -55,7 +55,7 @@ public class OAuth2Return extends AbstractWebScript
 	/* Connector property names */
 	public static final String PROP_ACCESS_TOKEN_PATH = "access-token-path";
 	
-	/* Value provider class */
+	/* Vault provider class */
 	public static final String VAULT_PROVIDER_ID = "oAuth2CredentialVaultProvider";
 
     private static Log logger = LogFactory.getLog(OAuth2Return.class);
