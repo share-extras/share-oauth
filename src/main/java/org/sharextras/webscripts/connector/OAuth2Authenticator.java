@@ -2,18 +2,29 @@ package org.sharextras.webscripts.connector;
 
 import java.text.MessageFormat;
 
+import javax.servlet.http.HttpSession;
+
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.springframework.context.ApplicationContext;
+import org.springframework.context.ApplicationContextAware;
+import org.springframework.extensions.surf.RequestContext;
+import org.springframework.extensions.surf.ServletUtil;
 import org.springframework.extensions.surf.exception.AuthenticationException;
+import org.springframework.extensions.surf.exception.CredentialVaultProviderException;
+import org.springframework.extensions.surf.support.ThreadLocalRequestContext;
 import org.springframework.extensions.surf.util.URLEncoder;
 import org.springframework.extensions.webscripts.Status;
+import org.springframework.extensions.webscripts.WebScriptException;
 import org.springframework.extensions.webscripts.connector.AbstractAuthenticator;
+import org.springframework.extensions.webscripts.connector.ConnectorService;
 import org.springframework.extensions.webscripts.connector.ConnectorSession;
 import org.springframework.extensions.webscripts.connector.Credentials;
 import org.springframework.extensions.webscripts.connector.RemoteClient;
 import org.springframework.extensions.webscripts.connector.Response;
+import org.springframework.extensions.webscripts.connector.User;
 
 /**
  * Attempts to retrieve a new OAuth 2.0 token using the refresh token, if available
@@ -23,17 +34,39 @@ import org.springframework.extensions.webscripts.connector.Response;
  * 
  * @author wabson
  */
-public class OAuth2Authenticator extends AbstractAuthenticator
+public class OAuth2Authenticator extends AbstractAuthenticator implements ApplicationContextAware
 {
-    private static Log logger = LogFactory.getLog(OAuth2Authenticator.class);
+    private ApplicationContext applicationContext;
     
+    private static Log logger = LogFactory.getLog(OAuth2Authenticator.class);
+
+    private static final String VAULT_PROVIDER_ID = "oAuth2CredentialVaultProvider";
     private static final String POST_LOGIN = "grant_type=refresh_token&refresh_token={0}&client_id={1}";
     //private static final String API_LOGIN = "/api/login";
     //private static final String MIMETYPE_APPLICATION_JSON = "application/json";
     private static final String MIMETYPE_URLENCODED = "x-www-form-urlencoded";
     
+    public final static String CS_PARAM_ACCESS_TOKEN = "accessToken";
+    
     // For Chatter this should be https://login.instance_name/services/oauth2/token
     private String requestTokenUri;
+    
+    public OAuth2Authenticator()
+    {
+        super();
+        if (logger.isDebugEnabled())
+            logger.debug("Creating new OAuth 2.0 authenticator");
+    }
+    
+    /**
+     * Sets the Spring application context
+     * 
+     * @param applicationContext    the Spring application context
+     */
+    public void setApplicationContext(ApplicationContext applicationContext)
+    {
+        this.applicationContext = applicationContext;
+    }
 
     @Override
     public ConnectorSession authenticate(String endpoint, Credentials credentials, ConnectorSession connectorSession)
@@ -41,11 +74,27 @@ public class OAuth2Authenticator extends AbstractAuthenticator
     {
         ConnectorSession cs = null;
         
-        String refreshToken;
-        if (credentials != null && (refreshToken = (String)credentials.getProperty(OAuth2Credentials.CREDENTIAL_REFRESH_TOKEN)) != null)
+        /*
+         * Try to load OAuth tokens from the vault
+         * 
+         * We cannot use the crendentials that are supplied to the method. These do not contain OAuth credentials
+         * because these need to be loaded separately from the persistent store.
+         */
+        Credentials oauthCredentials = loadOAuthCredentials(connectorSession.getEndpointId());
+        if (oauthCredentials != null && oauthCredentials.getProperty(OAuth2Credentials.CREDENTIAL_ACCESS_TOKEN) != null)
         {
+            // TODO also check that the token has not expired, if we know the expiration date
+            credentials.setProperty(CS_PARAM_ACCESS_TOKEN, oauthCredentials.getProperty(OAuth2Credentials.CREDENTIAL_ACCESS_TOKEN));
+            // signal that this succeeded
+            cs = connectorSession;
+        }
+        else if (oauthCredentials != null && oauthCredentials.getProperty(OAuth2Credentials.CREDENTIAL_REFRESH_TOKEN) != null)
+        {
+            String refreshToken = (String) oauthCredentials.getProperty(OAuth2Credentials.CREDENTIAL_REFRESH_TOKEN);
             // build a new remote client
+            
             // TODO the endoint for authenticating may be different from the general API endpoint if this is delgated
+            
             RemoteClient remoteClient = buildRemoteClient(endpoint);
             
             // POST to the request new access token URL
@@ -78,7 +127,7 @@ public class OAuth2Authenticator extends AbstractAuthenticator
                 // place the access token back into the credentials and save these
                 if (credentials != null)
                 {
-                    credentials.setProperty(OAuth2Credentials.CREDENTIAL_ACCESS_TOKEN, accessToken);
+                    credentials.setProperty(CS_PARAM_ACCESS_TOKEN, accessToken);
                     
                     // TODO we need to save the credentials at this point - how?
                     
@@ -103,7 +152,7 @@ public class OAuth2Authenticator extends AbstractAuthenticator
     @Override
     public boolean isAuthenticated(String endpoint, ConnectorSession connectorSession)
     {
-        return true;
+        return (connectorSession.getParameter(CS_PARAM_ACCESS_TOKEN) != null);
     }
 
     public boolean isAuthenticated(String endpoint, Credentials credentials, ConnectorSession connectorSession)
@@ -120,6 +169,33 @@ public class OAuth2Authenticator extends AbstractAuthenticator
     private String getRequestTokenUri()
     {
         return requestTokenUri;
+    }
+    
+    /**
+     * Load OAuth credentials for the current user from the persistent credential vault
+     * 
+     * @return
+     * @throws AuthenticationException 
+     */
+    private Credentials loadOAuthCredentials(String endpointId) throws AuthenticationException
+    {
+        HttpSession httpSession = ServletUtil.getSession();
+        RequestContext context = ThreadLocalRequestContext.getRequestContext();
+        User user = context.getUser();
+        String userId = user.getId();
+        try
+        {
+            ConnectorService connectorService = (ConnectorService) applicationContext.getBean("connector.service");
+            if (connectorService == null)
+            {
+                throw new AuthenticationException("Unable to load connector service");
+            }
+            return connectorService.getCredentialVault(httpSession, userId, VAULT_PROVIDER_ID).retrieve(endpointId);
+        }
+        catch (CredentialVaultProviderException e)
+        {
+            throw new WebScriptException("Unable to obtain credential vault for OAuth credentials", e);
+        }
     }
 
 }

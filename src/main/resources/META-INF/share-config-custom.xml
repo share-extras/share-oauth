@@ -2,12 +2,29 @@
 
     <config evaluator="string-compare" condition="Remote">
         <remote>
+
+            <!-- Connector Implementations -->
             <connector>
                 <id>oauth-token-passthru</id>
                 <name>OAuth Authentication Proxy Connector</name>
                 <description>HTTP Connector which will populate the Authorization header from the value of X-OAuth-Token</description>
                 <class>org.sharextras.webscripts.connector.AuthorizationPassthruConnector</class>
             </connector>
+            <connector>
+                <id>oauth2-header</id>
+                <name>Chatter OAuth 2.0 Connector</name>
+                <description>HTTP Connector with support for OAuth 2.0 authentication</description>
+                <class>org.sharextras.webscripts.connector.HttpOAuth2Connector</class>
+                <authenticator-id>oauth2-token</authenticator-id>
+            </connector>
+        
+            <!-- Authenticator Implementations -->
+            <authenticator>
+                <id>oauth2-token</id>
+                <name>OAuth 2.0 Token Authenticator</name>
+                <description>Manages OAuth 2.0 token-based access</description>
+                <class>org.sharextras.webscripts.connector.OAuth2Authenticator</class>
+            </authenticator>
         </remote>
     </config>
 

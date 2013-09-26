@@ -1,151 +1,69 @@
 package org.sharextras.webscripts.connector;
 
-import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
-
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.extensions.config.RemoteConfigElement.ConnectorDescriptor;
-import org.springframework.extensions.surf.util.URLEncoder;
 import org.springframework.extensions.webscripts.connector.ConnectorContext;
-import org.springframework.extensions.webscripts.connector.EndpointManager;
 import org.springframework.extensions.webscripts.connector.HttpConnector;
 import org.springframework.extensions.webscripts.connector.RemoteClient;
-import org.springframework.extensions.webscripts.connector.Response;
-import org.springframework.extensions.webscripts.connector.ResponseStatus;
 
+/**
+ * Connector for connecting to OAuth 2.0-protected resources
+ * 
+ * TODO Return a 401 straight away if there is no user context? The AuthenticatingConnector will always try the first request
+ *      unauthenticated otherwise, and this may not always return a 401 if the service supports anonymous access.
+ * 
+ * @author wabson
+ */
 public class HttpOAuth2Connector extends HttpConnector
 {
-    /*
-     * OAuth request parameter names
-     */
-    public static final String OAUTH_CLIENT_ID = "client_id";
-    public static final String OAUTH_CLIENT_SECRET = "client_secret";
-    public static final String OAUTH_CODE = "code";
-    public static final String OAUTH_GRANT_TYPE = "grant_type";
-    public static final String OAUTH_REDIRECT_URI = "redirect_uri";
+    public static final String HEADER_AUTHORIZATION = "Authorization";
     
-    /*
-     * Connector parameter names in connector config
-     */
-    public static final String PARAM_CLIENT_ID = "client-id";
-    public static final String PARAM_CLIENT_SECRET = "client-secret";
+    public static final String AUTH_METHOD_OAUTH = "OAuth";
+    public static final String AUTH_METHOD_BEARER = "Bearer";
+    
+    public static final String PARAM_AUTH_METHOD = "auth-method";
 
     private static Log logger = LogFactory.getLog(HttpOAuth2Connector.class);
-    
-    private String getClientId()
-    {
-        return descriptor.getStringProperty(PARAM_CLIENT_ID);
-    }
-    
-    private String getClientSecret()
-    {
-        return descriptor.getStringProperty(PARAM_CLIENT_SECRET);
-    }
     
     public HttpOAuth2Connector(ConnectorDescriptor descriptor, String endpoint)
     {
         super(descriptor, endpoint);
     }
-
-    @SuppressWarnings("unchecked")
-    public Response call(String uri, ConnectorContext context, HttpServletRequest req, HttpServletResponse res)
+    
+    private String getAuthenticationMethod()
     {
-        String httpMethod = (context != null ? context.getMethod().toString() : "GET");
-        
-        if (logger.isDebugEnabled())
-            logger.debug("Requested Method: " + httpMethod + " URI: " + uri);
-        
-        Response response = null;
-        if (EndpointManager.allowConnect(this.endpoint))
-        {
-            RemoteClient remoteClient = initRemoteClient(context);
-            
-            String baseUrl = uri;
-            if (baseUrl.indexOf('?') != -1)
-                baseUrl = baseUrl.substring(0, baseUrl.indexOf('?'));
-            
-            // Build up a Map with all incoming request parameters
-            Map<String, String> reqParams = new HashMap<String, String>();
-            for (Enumeration<String> pn = req.getParameterNames(); pn.hasMoreElements();)
-            {
-                String k = pn.nextElement();
-                reqParams.put(k, req.getParameter(k));
-                if (logger.isDebugEnabled())
-                    logger.debug("Add request paramter " + k + "=" + req.getParameter(k));
-            }
-            if (!reqParams.containsKey(OAUTH_CLIENT_ID))
-            {
-                // TODO check getClientId() is not null
-                reqParams.put(OAUTH_CLIENT_ID, getClientId());
-                if (logger.isDebugEnabled())
-                    logger.debug("Add client ID " + getClientId());
-            }
-            if (!reqParams.containsKey(OAUTH_CLIENT_SECRET))
-            {
-                // TODO check getClientSecret() is not null
-                reqParams.put(OAUTH_CLIENT_SECRET, getClientSecret());
-                if (logger.isDebugEnabled())
-                    logger.debug("Add client secret " + getClientSecret());
-            }
-            
-            StringBuffer postStrBuffer = new StringBuffer("");
-            int i = 0;
-            for (Map.Entry<String, String> entry : reqParams.entrySet())
-            {
-                if (i > 0)
-                    postStrBuffer.append("&");
-                postStrBuffer.append(encodeParameter(entry.getKey())).
-                    append("=").
-                    append(encodeParameter(entry.getValue()));
-                i ++;
-            }
-            
-            String postBody = postStrBuffer.toString();
-
-            if (logger.isDebugEnabled())
-                logger.debug("Sending POST body " + postBody);
-            
-            // TODO Support non-POST requests
-
-            // call client and process response
-            remoteClient.setRequestContentType("application/x-www-form-urlencoded");
-            response = remoteClient.call(uri, postBody);
-            //processResponse(remoteClient, response);
-            
-            String text = response.getText();
-
-            if (logger.isDebugEnabled())
-            {
-                logger.debug("Received response code " + response.getStatus().getCode());
-                logger.debug("Received response text " + text);
-            }
-            
-            ResponseStatus status = new ResponseStatus();
-            status.setCode(response.getStatus().getCode());
-            return new Response(text, status);
-        }
-        else
-        {
-            ResponseStatus status = new ResponseStatus();
-            status.setCode(ResponseStatus.STATUS_INTERNAL_SERVER_ERROR);
-            return new Response((String) null, status);
-        }
+        String descriptorMethod = descriptor.getStringProperty(PARAM_AUTH_METHOD);
+        return descriptorMethod != null ? descriptorMethod : AUTH_METHOD_OAUTH;
     }
     
-    /**
-     * Percent-encode a parameter for the POST body
-     * 
-     * @param p Unencoded string
-     * @return Encoded text
+    /* (non-Javadoc)
+     * @see org.alfresco.connector.HttpConnector#stampCredentials(org.alfresco.connector.RemoteClient, org.alfresco.connector.ConnectorContext)
      */
-    private String encodeParameter(String p)
+    @Override
+    protected void applyRequestAuthentication(RemoteClient remoteClient, ConnectorContext context)
     {
-        return URLEncoder.encodeUriComponent(p);
+        String accessToken = null;
+        
+        // if this connector is managing session info
+        if (getConnectorSession() != null)
+        {
+            // apply alfresco ticket from connector session - i.e. previous login attempt
+            accessToken = (String)getConnectorSession().getParameter(OAuth2Authenticator.CS_PARAM_ACCESS_TOKEN);
+        }
+        
+        if (accessToken != null)
+        {
+            String authorization = getAuthenticationMethod() + " " + accessToken;
+            if (logger.isDebugEnabled())
+                logger.debug("Adding Authorization header " + authorization);
+            Map<String, String> headers = new HashMap<String, String>(1);
+            headers.put(HEADER_AUTHORIZATION, authorization);
+            remoteClient.setRequestProperties(headers);
+        }
     }
 
 }
