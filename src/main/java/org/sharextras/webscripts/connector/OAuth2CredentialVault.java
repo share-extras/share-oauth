@@ -15,7 +15,6 @@ import org.springframework.extensions.surf.RequestContext;
 import org.springframework.extensions.surf.ServletUtil;
 import org.springframework.extensions.surf.exception.ConnectorServiceException;
 import org.springframework.extensions.surf.support.ThreadLocalRequestContext;
-import org.springframework.extensions.webscripts.Format;
 import org.springframework.extensions.webscripts.Status;
 import org.springframework.extensions.webscripts.connector.Connector;
 import org.springframework.extensions.webscripts.connector.ConnectorService;
@@ -34,16 +33,17 @@ import org.springframework.extensions.webscripts.connector.User;
  */
 public class OAuth2CredentialVault extends SimpleCredentialVault
 {
-    private static final String API_STORE_TOKEN = "/oauth/token";
+    private static final String API_STORE_TOKEN = "/extras/oauth2/token/%s";
     private static final String ENDPOINT_ALFRESCO = "alfresco";
     private static final String JSON_PROP_PROVIDER_ID = "name";
-    private static final String JSON_PROP_ACCESS_TOKEN = "token";
+    private static final String JSON_PROP_ACCESS_TOKEN = "accessToken";
     private static final String JSON_PROP_REFRESH_TOKEN = "refreshToken";
-    private static final String PROVIDER_PREFIX = "credentials_";
 
     private static Log logger = LogFactory.getLog(OAuth2CredentialVault.class);
     
     private static final long serialVersionUID = 4009102141325723492L;
+    
+    private Connector alfrescoConnector;
     
     private ConnectorService connectorService;
 
@@ -80,62 +80,73 @@ public class OAuth2CredentialVault extends SimpleCredentialVault
         return true;
     }
 
-    private boolean load(String endpoint)
+    protected boolean load(String endpoint)
     {
         RequestContext context = ThreadLocalRequestContext.getRequestContext();
         User user = context.getUser();
+        if (user == null)
+        {
+            logger.error("Could not locate user object in request context");
+            return false;
+        }
         String userId = user.getId();
         HttpSession httpSession = ServletUtil.getSession();
+        if (httpSession == null)
+        {
+            logger.error("Could not locate session object in request context");
+            return false;
+        }
         return load(endpoint, httpSession, userId);
+    }
+
+    protected boolean load(String endpoint, Connector alfrescoConnector)
+    {
+        // build a new remote client
+        String providerId = endpoint, 
+                tokenUrl = getTokenApi(providerId);
+
+        Response response = alfrescoConnector.call(tokenUrl);
+        
+        if (response.getStatus().getCode() == Status.STATUS_OK)
+        {
+            try
+            {
+                JSONObject jsonObject = new JSONObject(new JSONTokener(response.getText()));
+                String accessToken = jsonObject.getString(JSON_PROP_ACCESS_TOKEN), refreshToken = null;
+                if (jsonObject.has(JSON_PROP_REFRESH_TOKEN) && !"".equals(jsonObject.getString(JSON_PROP_REFRESH_TOKEN)))
+                {
+                    refreshToken = jsonObject.getString(JSON_PROP_REFRESH_TOKEN);
+                }
+                Credentials credentials = newCredentials(endpoint);
+                credentials.setProperty(OAuth2Credentials.CREDENTIAL_ACCESS_TOKEN, accessToken);
+                credentials.setProperty(OAuth2Credentials.CREDENTIAL_REFRESH_TOKEN, refreshToken);
+                
+                return true;
+            }
+            catch (JSONException e)
+            {
+                logger.error("Could not parse token response JSON", e);
+            }
+        }
+        else
+        {
+            logger.error("Received response code " + response.getStatus().getCode() + " from token store");
+        }
+        
+        return false;
     }
 
     private boolean load(String endpoint, HttpSession session, String userId)
     {
-        // build a new remote client
         try
         {
-            Connector alfrescoConnector = connectorService.getConnector(ENDPOINT_ALFRESCO, userId, session);
-            String providerId = PROVIDER_PREFIX + endpoint, 
-                    tokenUrl = API_STORE_TOKEN + "/" + providerId;
-
-            Response response = alfrescoConnector.call(tokenUrl);
-            
-            if (response.getStatus().getCode() == Status.STATUS_OK)
-            {
-                if (response.getEncoding() == Format.JSON.mimetype())
-                {
-                    try
-                    {
-                        JSONObject jsonObject = new JSONObject(new JSONTokener(response.getText()));
-                        String accessToken = jsonObject.getString(JSON_PROP_ACCESS_TOKEN), refreshToken = null;
-                        if (jsonObject.has(JSON_PROP_REFRESH_TOKEN) && !"".equals(jsonObject.getString(JSON_PROP_REFRESH_TOKEN)))
-                        {
-                            refreshToken = jsonObject.getString(JSON_PROP_REFRESH_TOKEN);
-                        }
-                        Credentials credentials = newCredentials(endpoint);
-                        credentials.setProperty(OAuth2Credentials.CREDENTIAL_ACCESS_TOKEN, accessToken);
-                        credentials.setProperty(OAuth2Credentials.CREDENTIAL_REFRESH_TOKEN, refreshToken);
-                    }
-                    catch (JSONException e)
-                    {
-                        // TODO throw an exception
-                    }
-                }
-                else
-                {
-                    // TODO throw an exception
-                }
-            }
-            
-            return true;
+            return load(endpoint, getAlfrescoConnector(ENDPOINT_ALFRESCO, userId, session));
         }
-        catch (ConnectorServiceException e1)
+        catch (ConnectorServiceException e)
         {
-            // TODO Auto-generated catch block
-            e1.printStackTrace();
+            logger.error("Error while attempting to access Alfresco connector", e);
             return false;
         }
-        
     }
     
     @Override
@@ -143,19 +154,41 @@ public class OAuth2CredentialVault extends SimpleCredentialVault
     {
         RequestContext context = ThreadLocalRequestContext.getRequestContext();
         User user = context.getUser();
+        if (user == null)
+        {
+            logger.error("Could not locate user object in request context");
+            return false;
+        }
         String userId = user.getId();
         HttpSession httpSession = ServletUtil.getSession();
+        if (httpSession == null)
+        {
+            logger.error("Could not locate session object in request context");
+            return false;
+        }
         return save(httpSession, userId);
     }
 
     public boolean save(HttpSession session, String userId)
     {
+        try
+        {
+            return save(getAlfrescoConnector(ENDPOINT_ALFRESCO, userId, session));
+        }
+        catch (ConnectorServiceException e)
+        {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    public boolean save(Connector alfrescoConnector)
+    {
         boolean status = true;
         
         try
         {
-            Connector alfrescoConnector = connectorService.getConnector(ENDPOINT_ALFRESCO, userId, session);
-            
             // walk through all of the endpoints
             Iterator<String> it = credentialsMap.keySet().iterator();
             while(it.hasNext())
@@ -163,7 +196,7 @@ public class OAuth2CredentialVault extends SimpleCredentialVault
                 //remoteClient.setRequestContentType(Format.JSON.mimetype());
                 
                 String endpointId = (String) it.next(), 
-                        providerId = PROVIDER_PREFIX + endpointId, token = "", refreshToken = "";
+                        providerId = endpointId, token = "", refreshToken = "";
                 
                 Credentials credentials = retrieve(endpointId);
 
@@ -186,7 +219,7 @@ public class OAuth2CredentialVault extends SimpleCredentialVault
                 }
                 
                 // Persist the access token
-                String tokenUrl = API_STORE_TOKEN + "/" + providerId;
+                String tokenUrl = getTokenApi(providerId);
                 String postBody = persistParams.toString();
                 
                 if (logger.isDebugEnabled())
@@ -212,12 +245,6 @@ public class OAuth2CredentialVault extends SimpleCredentialVault
             return status;
             
         }
-        catch (ConnectorServiceException e1)
-        {
-            // TODO Auto-generated catch block
-            e1.printStackTrace();
-            return false;
-        }
         catch (UnsupportedEncodingException e)
         {
             // TODO Auto-generated catch block
@@ -234,6 +261,26 @@ public class OAuth2CredentialVault extends SimpleCredentialVault
     public void setConnectorService(ConnectorService connectorService)
     {
         this.connectorService = connectorService;
+    }
+    
+    public Connector getAlfrescoConnector()
+    {
+        return alfrescoConnector;
+    }
+    
+    public Connector getAlfrescoConnector(String endpoint, String userId, HttpSession session) throws ConnectorServiceException
+    {
+        return this.alfrescoConnector != null ? this.alfrescoConnector : connectorService.getConnector(ENDPOINT_ALFRESCO, userId, session);
+    }
+    
+    public void setAlfrescoConnector(Connector connector)
+    {
+        this.alfrescoConnector = connector;
+    }
+    
+    public String getTokenApi(String endpointId)
+    {
+        return String.format(API_STORE_TOKEN, endpointId);
     }
 
 }

@@ -13,12 +13,14 @@ import org.springframework.context.ApplicationContextAware;
 import org.springframework.extensions.surf.RequestContext;
 import org.springframework.extensions.surf.ServletUtil;
 import org.springframework.extensions.surf.exception.AuthenticationException;
+import org.springframework.extensions.surf.exception.ConnectorServiceException;
 import org.springframework.extensions.surf.exception.CredentialVaultProviderException;
 import org.springframework.extensions.surf.support.ThreadLocalRequestContext;
 import org.springframework.extensions.surf.util.URLEncoder;
 import org.springframework.extensions.webscripts.Status;
 import org.springframework.extensions.webscripts.WebScriptException;
 import org.springframework.extensions.webscripts.connector.AbstractAuthenticator;
+import org.springframework.extensions.webscripts.connector.Connector;
 import org.springframework.extensions.webscripts.connector.ConnectorService;
 import org.springframework.extensions.webscripts.connector.ConnectorSession;
 import org.springframework.extensions.webscripts.connector.Credentials;
@@ -40,6 +42,7 @@ public class OAuth2Authenticator extends AbstractAuthenticator implements Applic
     
     private static Log logger = LogFactory.getLog(OAuth2Authenticator.class);
 
+    private static final String ENDPOINT_ALFRESCO = "alfresco";
     private static final String VAULT_PROVIDER_ID = "oAuth2CredentialVaultProvider";
     private static final String POST_LOGIN = "grant_type=refresh_token&refresh_token={0}&client_id={1}";
     //private static final String API_LOGIN = "/api/login";
@@ -80,7 +83,24 @@ public class OAuth2Authenticator extends AbstractAuthenticator implements Applic
          * We cannot use the crendentials that are supplied to the method. These do not contain OAuth credentials
          * because these need to be loaded separately from the persistent store.
          */
-        Credentials oauthCredentials = loadOAuthCredentials(connectorSession.getEndpointId());
+        //Credentials oauthCredentials = loadOAuthCredentials(connectorSession.getEndpointId());
+        
+        Credentials oauthCredentials = null;
+        ConnectorService connectorService = (ConnectorService) applicationContext.getBean("connector.service");
+        Connector alfrescoConnector;
+        try
+        {
+            alfrescoConnector = connectorService.getConnector(ENDPOINT_ALFRESCO);
+            alfrescoConnector.setCredentials(credentials); // Just one set of credentials for the user, so we can steal these to use for the Alfresco connector
+            OAuth2CredentialVault vault = new OAuth2CredentialVault("standaloneVault");
+            vault.setAlfrescoConnector(alfrescoConnector); // Set the Alfresco connector to use directly - will then bypass the connector service
+            oauthCredentials = vault.retrieve(connectorSession.getEndpointId());
+        }
+        catch (ConnectorServiceException e)
+        {
+            e.printStackTrace();
+        }
+        
         if (oauthCredentials != null && oauthCredentials.getProperty(OAuth2Credentials.CREDENTIAL_ACCESS_TOKEN) != null)
         {
             // TODO also check that the token has not expired, if we know the expiration date
@@ -177,15 +197,18 @@ public class OAuth2Authenticator extends AbstractAuthenticator implements Applic
      * @return
      * @throws AuthenticationException 
      */
+    @SuppressWarnings("unused")
     private Credentials loadOAuthCredentials(String endpointId) throws AuthenticationException
     {
         HttpSession httpSession = ServletUtil.getSession();
         RequestContext context = ThreadLocalRequestContext.getRequestContext();
         User user = context.getUser();
+
+        ConnectorService connectorService = (ConnectorService) applicationContext.getBean("connector.service");
+        
         String userId = user.getId();
         try
         {
-            ConnectorService connectorService = (ConnectorService) applicationContext.getBean("connector.service");
             if (connectorService == null)
             {
                 throw new AuthenticationException("Unable to load connector service");

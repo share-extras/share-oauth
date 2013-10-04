@@ -78,8 +78,8 @@ public class OAuth2Return extends AbstractWebScript
 	public void execute(WebScriptRequest req, WebScriptResponse resp) throws IOException
 	{
 		String code = req.getParameter(PARAM_CODE), // mandatory
-			endpointName = req.getParameter(PARAM_ENDPOINT_ID),
-			tokenName = req.getParameter(PARAM_PROVIDER_ID);
+			//endpointName = req.getParameter(PARAM_ENDPOINT_ID), // Could this compromise our security? Better to hard-code in webscript Spring config?
+			endpointName = null;
 		
 		// If values are not supplied as parameters then look these up from the script properties
 		
@@ -94,9 +94,9 @@ public class OAuth2Return extends AbstractWebScript
 		{
 			throw new WebScriptException("No OAuth return code was found");
 		}
-		if (tokenName == null || tokenName.length() == 0)
+		if (endpointName == null || endpointName.length() == 0)
 		{
-			throw new WebScriptException("No token name was specified");
+			throw new WebScriptException("No endpoint name was specified");
 		}
 		
         if (logger.isDebugEnabled())
