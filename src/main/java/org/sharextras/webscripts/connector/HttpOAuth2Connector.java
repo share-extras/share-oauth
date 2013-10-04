@@ -40,8 +40,10 @@ public class HttpOAuth2Connector extends HttpConnector
     private static final String USER_ID = "_alf_USER_ID";
 
     public static final String PARAM_AUTH_METHOD = "auth-method";
+    public static final String PARAM_TOKEN_ENDPOINT = "token-source";
 
     private static Log logger = LogFactory.getLog(HttpOAuth2Connector.class);
+    
     private ApplicationContext applicationContext;
     
     public HttpOAuth2Connector(ConnectorDescriptor descriptor, String endpoint)
@@ -65,7 +67,7 @@ public class HttpOAuth2Connector extends HttpConnector
         return descriptorMethod != null ? descriptorMethod : AUTH_METHOD_OAUTH;
     }
     
-    private boolean hasAccessToken(HttpSession session)
+    protected boolean hasAccessToken(HttpSession session)
     {
         return !(getConnectorSession() == null || getConnectorSession().getParameter(OAuth2Authenticator.CS_PARAM_ACCESS_TOKEN) == null);
     }
@@ -86,7 +88,7 @@ public class HttpOAuth2Connector extends HttpConnector
             if (hasAccessToken(session))
             {
                 context.setCommitResponseOnAuthenticationError(false);
-                resp = super.call(uri, context, req, res);
+                resp = callInternal(uri, context, req, res);
                 // We could have a cached access token which has been updated in the repo
                 if (resp.getStatus().getCode() == ResponseStatus.STATUS_UNAUTHORIZED)
                 {
@@ -96,9 +98,13 @@ public class HttpOAuth2Connector extends HttpConnector
                     // Retry the operation
                     if (hasAccessToken(session))
                     {
+                        context.setCommitResponseOnAuthenticationError(false);
+                        resp = callInternal(uri, context, req, res);
                     }
-                    context.setCommitResponseOnAuthenticationError(false);
-                    resp = super.call(uri, context, req, res);
+                    else
+                    {
+                        // TODO What to do here?
+                    }
                 }
             }
             else
@@ -139,7 +145,12 @@ public class HttpOAuth2Connector extends HttpConnector
         }
     }
 
-    private void loadTokens(String uri, HttpServletRequest request) throws CredentialVaultProviderException, ConnectorServiceException
+    protected Response callInternal(String uri, ConnectorContext context, HttpServletRequest req, HttpServletResponse res)
+    {
+        return super.call(uri, context, req, res);
+    }
+
+    protected void loadTokens(String uri, HttpServletRequest request) throws CredentialVaultProviderException, ConnectorServiceException
     {
         logger.debug("Loading OAuth tokens");
         
@@ -147,8 +158,8 @@ public class HttpOAuth2Connector extends HttpConnector
         if (session != null)
         {
             String userId = (String)session.getAttribute(USER_ID);
-            //String endpointId = connectorSession.getEndpointId();
-            String endpointId = request.getPathInfo().replaceAll(uri, "").replaceAll("/proxy/", "");
+            String endpointId = getEndpointId() != null ? getEndpointId() : 
+                request.getPathInfo().replaceAll(uri, "").replaceAll("/proxy/", "");
 
             ConnectorService connectorService = (ConnectorService) applicationContext.getBean("connector.service");
 
@@ -194,6 +205,11 @@ public class HttpOAuth2Connector extends HttpConnector
             headers.put(HEADER_AUTHORIZATION, authorization);
             remoteClient.setRequestProperties(headers);
         }
+    }
+
+    public String getEndpointId()
+    {
+        return descriptor.getStringProperty(PARAM_TOKEN_ENDPOINT);
     }
 
 }
