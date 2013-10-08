@@ -20,6 +20,7 @@ import org.springframework.extensions.surf.exception.CredentialVaultProviderExce
 import org.springframework.extensions.surf.support.ThreadLocalRequestContext;
 import org.springframework.extensions.surf.util.URLDecoder;
 import org.springframework.extensions.webscripts.AbstractWebScript;
+import org.springframework.extensions.webscripts.Format;
 import org.springframework.extensions.webscripts.Status;
 import org.springframework.extensions.webscripts.WebScriptException;
 import org.springframework.extensions.webscripts.WebScriptRequest;
@@ -200,7 +201,7 @@ public class OAuth2Return extends AbstractWebScript
 		
 		if (logger.isDebugEnabled())
 		{
-		    logger.debug("Received OAuth return code " + verifier);
+		    logger.debug("Sending OAuth return code " + verifier + " to " + postUri);
 		}
 		
         String baseUrl = req.getURL();
@@ -220,6 +221,9 @@ public class OAuth2Return extends AbstractWebScript
         {
             method.addParameter("client_secret", clientSecret);
         }
+        
+        // Request JSON response
+        method.addRequestHeader("Accept", Format.JSON.mimetype());
 		
 		int statusCode = client.executeMethod(method);
 		
