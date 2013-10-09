@@ -90,7 +90,8 @@ public class HttpOAuth2Connector extends HttpConnector
                 context.setCommitResponseOnAuthenticationError(false);
                 resp = callInternal(uri, context, req, res);
                 // We could have a cached access token which has been updated in the repo
-                if (resp.getStatus().getCode() == ResponseStatus.STATUS_UNAUTHORIZED)
+                if (resp.getStatus().getCode() == ResponseStatus.STATUS_UNAUTHORIZED || 
+                        resp.getStatus().getCode() == ResponseStatus.STATUS_FORBIDDEN)
                 {
                     if (logger.isDebugEnabled())
                         logger.debug("Loading resource " + uri + " - second attempt");
