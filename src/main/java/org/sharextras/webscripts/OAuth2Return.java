@@ -101,10 +101,21 @@ public class OAuth2Return extends AbstractWebScript
             throw new WebScriptException(ResponseStatus.STATUS_BAD_REQUEST, "Connector name cannot be null");
         }
 
+        // First look up parameters specified on the endpoint
+        String tokenUrl = epd.getStringProperty(PROP_ACCESS_TOKEN_URL),
+                clientId = epd.getStringProperty(PROP_CLIENT_ID),
+                clientSecret = epd.getStringProperty(PROP_CLIENT_SECRET);
+
+        // Use values from the connector descriptor, if not provided on the endpoint
         ConnectorDescriptor cd = getConnectorService().getRemoteConfig().getConnectorDescriptor(connectorId);
-        if (cd == null)
+        if (cd != null)
         {
-            throw new WebScriptException(ResponseStatus.STATUS_NOT_FOUND, "Endpoint " + endpointId + " could not be found");
+            if (tokenUrl == null)
+                tokenUrl = cd.getStringProperty(PROP_ACCESS_TOKEN_URL);
+            if (clientId == null)
+                clientId = cd.getStringProperty(PROP_CLIENT_ID);
+            if (clientSecret == null)
+                clientSecret = cd.getStringProperty(PROP_CLIENT_SECRET);
         }
 
         RequestContext context = ThreadLocalRequestContext.getRequestContext();
@@ -124,7 +135,7 @@ public class OAuth2Return extends AbstractWebScript
         String accessToken = null, refreshToken = "";
 
         // TODO return a map or object, not a JSON object here
-        JSONObject authParams = requestAccessToken(cd, code, req);
+        JSONObject authParams = requestAccessToken(tokenUrl, clientId, clientSecret, code, req);
 
         if (logger.isDebugEnabled())
         {
@@ -172,28 +183,25 @@ public class OAuth2Return extends AbstractWebScript
     }
 
     /**
-     * Obtain a permanent access token from the OAuth service, utilising the OAuth connector to
-     * perform the necessary signing of requests.
+     * Make an external call to the OAuth provider to exchange the temporary code for a more
+     * permanent access token.
      * 
-     * TODO Check if we can make this more secure by auto-finding the endpoint name
-     * 
-     * @param endpointId
-     * @param verifier
-     * @param req
-     * @param oauthConnector
+     * @param tokenUrl      URL which will be POST'ed to to fetch an access token
+     * @param clientId      OAuth client ID
+     * @param clientSecret  OAuth client secret
+     * @param verifier      Temporary code returned from the OAuth provider, to be exchanged for an access token
+     * @param req           The web script request object relating to this request
      * @return
      * @throws HttpException
      * @throws IOException
      */
     private JSONObject requestAccessToken(
-            ConnectorDescriptor cd, 
+            String tokenUrl, 
+            String clientId,
+            String clientSecret,
             String verifier,
             WebScriptRequest req) throws HttpException, IOException
     {
-        String tokenUrl = cd.getStringProperty(PROP_ACCESS_TOKEN_URL),
-                clientId = cd.getStringProperty(PROP_CLIENT_ID),
-                clientSecret = cd.getStringProperty(PROP_CLIENT_SECRET);
-        
         if (tokenUrl == null)
         {
             throw new IllegalArgumentException("Parameter 'access-token-url' must be provided on connector");
