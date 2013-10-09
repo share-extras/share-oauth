@@ -18,6 +18,14 @@
                 <!-- <authenticator-id>oauth2-token</authenticator-id> -->
                 <identity>user</identity>
             </connector>
+            <connector>
+                <id>oauth2-querystring</id>
+                <name>Chatter OAuth 2.0 Connector</name>
+                <description>HTTP Connector with support for OAuth 2.0 authentication</description>
+                <class>org.sharextras.webscripts.connector.HttpOAuth2QueryStringConnector</class>
+                <!-- <authenticator-id>oauth2-token</authenticator-id> -->
+                <identity>user</identity>
+            </connector>
         
             <!-- Authenticator Implementations -->
             <authenticator>
