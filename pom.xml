@@ -13,7 +13,7 @@
     <properties>
         <buildnumber>SNAPSHOT</buildnumber>
         <alfresco.groupId>org.alfresco</alfresco.groupId>
-        <alfresco.version>4.2.d-SNAPSHOT</alfresco.version>
+        <alfresco.version>4.2.d</alfresco.version>
         <!-- This controls which properties will be picked in src/test/properties for embedded run -->
         <env>local</env>
     </properties>
@@ -24,19 +24,10 @@
         <version>1.0.1</version>
     </parent>
 
-    <!-- New Alfresco Maven Community Repository instance, pro -->
     <repositories>
         <repository>
             <id>alfresco-public</id>
             <url>https://artifacts.alfresco.com/nexus/content/groups/public</url>
-        </repository>
-        <repository>
-            <id>alfresco-public-snapshots</id>
-            <url>https://artifacts.alfresco.com/nexus/content/groups/public-snapshots</url>
-            <snapshots>
-                <enabled>true</enabled>
-                <updatePolicy>daily</updatePolicy>
-            </snapshots>
         </repository>
     </repositories>
 
@@ -47,7 +38,6 @@
             <version>3.8.1</version>
             <scope>test</scope>
         </dependency>
-        <!-- Spring Surf dependencies are available via proxy via maven.alfresco.com so just add them below -->
         <dependency>
             <groupId>org.springframework.extensions.surf</groupId>
             <artifactId>spring-surf-api</artifactId>
