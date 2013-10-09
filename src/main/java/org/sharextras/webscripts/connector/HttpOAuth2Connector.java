@@ -1,5 +1,6 @@
 package org.sharextras.webscripts.connector;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -13,6 +14,7 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.extensions.config.RemoteConfigElement.ConnectorDescriptor;
 import org.springframework.extensions.surf.exception.ConnectorServiceException;
 import org.springframework.extensions.surf.exception.CredentialVaultProviderException;
+import org.springframework.extensions.surf.util.FakeHttpServletResponse;
 import org.springframework.extensions.webscripts.connector.ConnectorContext;
 import org.springframework.extensions.webscripts.connector.ConnectorService;
 import org.springframework.extensions.webscripts.connector.Credentials;
@@ -58,6 +60,7 @@ public class HttpOAuth2Connector extends HttpConnector
      */
     public void setApplicationContext(ApplicationContext applicationContext)
     {
+        super.setApplicationContext(applicationContext);
         this.applicationContext = applicationContext;
     }
     
@@ -71,7 +74,7 @@ public class HttpOAuth2Connector extends HttpConnector
     {
         return !(getConnectorSession() == null || getConnectorSession().getParameter(OAuth2Authenticator.CS_PARAM_ACCESS_TOKEN) == null);
     }
-    
+
     @Override
     public Response call(String uri, ConnectorContext context, HttpServletRequest req, HttpServletResponse res)
     {
@@ -88,8 +91,14 @@ public class HttpOAuth2Connector extends HttpConnector
             if (hasAccessToken(session))
             {
                 context.setCommitResponseOnAuthenticationError(false);
-                resp = callInternal(uri, context, req, res);
+                
+                // Wrap the response object, since it gets committed straight away
+                FakeHttpServletResponse wrappedRes = new FakeHttpServletResponse(res);
+                resp = callInternal(uri, context, req, wrappedRes);
+                if (logger.isDebugEnabled())
+                    logger.debug("Response status " + resp.getStatus().getCode() + " " + resp.getStatus().getCodeName());
                 // We could have a cached access token which has been updated in the repo
+                
                 if (resp.getStatus().getCode() == ResponseStatus.STATUS_UNAUTHORIZED || 
                         resp.getStatus().getCode() == ResponseStatus.STATUS_FORBIDDEN)
                 {
@@ -99,13 +108,34 @@ public class HttpOAuth2Connector extends HttpConnector
                     // Retry the operation
                     if (hasAccessToken(session))
                     {
-                        context.setCommitResponseOnAuthenticationError(false);
-                        resp = callInternal(uri, context, req, res);
+                        context.setCommitResponseOnAuthenticationError(true);
+                        try
+                        {
+                            resp = callInternal(uri, context, req, res);
+                            if (logger.isDebugEnabled())
+                                logger.debug("Response status " + resp.getStatus().getCode() + " " + resp.getStatus().getCodeName());
+                        }
+                        catch (Throwable t)
+                        {
+                            logger.error("Encountered error when attempting to reload", t);
+                        }
                     }
                     else
                     {
-                        // TODO What to do here?
+                        throw new RuntimeException("No access token is present");
                     }
+                }
+                else
+                {
+                    res.setStatus(wrappedRes.getStatus());
+                    res.setCharacterEncoding(wrappedRes.getCharacterEncoding());
+                    // Copy headers over
+                    for (Object hdrname : wrappedRes.getHeaderNames())
+                    {
+                        res.setHeader((String) hdrname, (String) wrappedRes.getHeader((String) hdrname));
+                    }
+                    res.getOutputStream().write(wrappedRes.getContentAsByteArray());
+                    res.flushBuffer();
                 }
             }
             else
@@ -119,6 +149,7 @@ public class HttpOAuth2Connector extends HttpConnector
                 //throw new RuntimeException("No access token is present");
                 
             }
+            
             return resp;
         }
         // TODO return responses with errors when we are able to
@@ -143,6 +174,10 @@ public class HttpOAuth2Connector extends HttpConnector
             return new Response(status);
             */
             throw new RuntimeException("Unable to access Alfresco connector in order to retrieve OAuth credentials", e);
+        }
+        catch (IOException e)
+        {
+            throw new RuntimeException("Error encountered copying outputstream", e);
         }
     }
 
