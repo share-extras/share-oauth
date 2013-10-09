@@ -14,6 +14,8 @@ import org.json.JSONException;
 import org.json.JSONObject;
 import org.json.JSONTokener;
 import org.sharextras.webscripts.connector.OAuth2Credentials;
+import org.springframework.extensions.config.RemoteConfigElement.ConnectorDescriptor;
+import org.springframework.extensions.config.RemoteConfigElement.EndpointDescriptor;
 import org.springframework.extensions.surf.RequestContext;
 import org.springframework.extensions.surf.ServletUtil;
 import org.springframework.extensions.surf.exception.CredentialVaultProviderException;
@@ -28,6 +30,7 @@ import org.springframework.extensions.webscripts.WebScriptResponse;
 import org.springframework.extensions.webscripts.connector.ConnectorService;
 import org.springframework.extensions.webscripts.connector.CredentialVault;
 import org.springframework.extensions.webscripts.connector.Credentials;
+import org.springframework.extensions.webscripts.connector.ResponseStatus;
 import org.springframework.extensions.webscripts.connector.User;
 
 /**
@@ -42,69 +45,68 @@ import org.springframework.extensions.webscripts.connector.User;
  */
 public class OAuth2Return extends AbstractWebScript
 {
-	/* URL fragments */
-	public static final String URL_PROXY_SERVLET = "/proxy";
-	
-	/* URL Parameter names */
-    public static final String PARAM_CODE = "code";
-	public static final String PARAM_CONNECTOR_ID = "cid";
-	public static final String PARAM_ENDPOINT_ID = "eid";
-	public static final String PARAM_PROVIDER_ID = "pid";
-    public static final String PARAM_REDIRECT_PAGE = "rp";
-    public static final String PARAM_STATE = "state";
-	
-	/* Connector property names */
-	public static final String PROP_ACCESS_TOKEN_PATH = "access-token-path";
-	
-	/* Vault provider class */
-	public static final String VAULT_PROVIDER_ID = "oAuth2CredentialVaultProvider";
+    /* URL parameter and placeholder names */
+    private static final String PARAM_CODE = "code";
+    private static final String PARAM_REDIRECT_PAGE = "rp";
+    private static final String PARAM_STATE = "state";
+    private static final String PH_ENDPOINT_ID = "endpoint";
+
+    /* Connector property names */
+    private static final String PROP_ACCESS_TOKEN_URL = "access-token-url";
+    private static final String PROP_CLIENT_ID = "client-id";
+    private static final String PROP_CLIENT_SECRET = "client-secret";
+
+    /* Vault provider class */
+    public static final String VAULT_PROVIDER_ID = "oAuth2CredentialVaultProvider";
 
     private static Log logger = LogFactory.getLog(OAuth2Return.class);
     
-    private String endpointId;
-    private String clientId;
-    private String clientSecret;
-    private String accessTokenUrl;
-    
     private ConnectorService connectorService;
 
-	/**
-	 * Web Script constructor
-	 */
-	public OAuth2Return()
-	{
-	}
+    /**
+     * Web Script constructor
+     */
+    public OAuth2Return()
+    {
+    }
 
-	@Override
-	public void execute(WebScriptRequest req, WebScriptResponse resp) throws IOException
-	{
-		String code = req.getParameter(PARAM_CODE), // mandatory
-			//endpointName = req.getParameter(PARAM_ENDPOINT_ID), // Could this compromise our security? Better to hard-code in webscript Spring config?
-			endpointName = null;
-		
-		// If values are not supplied as parameters then look these up from the script properties
-		
-        if (endpointName == null)
-        {
-            endpointName = getEndpointId();
-        }
+    @Override
+    public void execute(WebScriptRequest req, WebScriptResponse resp) throws IOException
+    {
+        String code = req.getParameter(PARAM_CODE), // mandatory
+                endpointId = req.getServiceMatch().getTemplateVars().get(PH_ENDPOINT_ID);
 
-		req.getExtensionPath();
-		
-		if (code == null || code.length() == 0)
-		{
-			throw new WebScriptException("No OAuth return code was found");
-		}
-		if (endpointName == null || endpointName.length() == 0)
-		{
-			throw new WebScriptException("No endpoint name was specified");
-		}
-		
         if (logger.isDebugEnabled())
         {
             logger.debug("Received OAuth return code " + code);
         }
-        
+
+        if (code == null || code.length() == 0)
+        {
+            throw new WebScriptException(ResponseStatus.STATUS_BAD_REQUEST, "No OAuth return code was found");
+        }
+        if (endpointId == null)
+        {
+            throw new WebScriptException(ResponseStatus.STATUS_BAD_REQUEST, "No endpoint ID was specified");
+        }
+
+        EndpointDescriptor epd = getConnectorService().getRemoteConfig().getEndpointDescriptor(endpointId);
+        if (epd == null)
+        {
+            throw new WebScriptException(ResponseStatus.STATUS_NOT_FOUND, "Endpoint " + endpointId + " could not be found");
+        }
+        String connectorId = epd.getConnectorId();
+        if (connectorId == null)
+        {
+            throw new WebScriptException(ResponseStatus.STATUS_BAD_REQUEST, "Connector name cannot be null");
+        }
+
+        ConnectorDescriptor cd = getConnectorService().getRemoteConfig().getConnectorDescriptor(connectorId);
+        if (cd == null)
+        {
+            throw new WebScriptException(ResponseStatus.STATUS_NOT_FOUND, "Endpoint " + endpointId + " could not be found");
+        }
+
         RequestContext context = ThreadLocalRequestContext.getRequestContext();
         User user = context.getUser();
         String userId = user.getId();
@@ -120,12 +122,12 @@ public class OAuth2Return extends AbstractWebScript
         }
 
         String accessToken = null, refreshToken = "";
-        
+
         // TODO return a map or object, not a JSON object here
-		JSONObject authParams = requestAccessToken(null, code, req);
-		
-		if (logger.isDebugEnabled())
-		{
+        JSONObject authParams = requestAccessToken(cd, code, req);
+
+        if (logger.isDebugEnabled())
+        {
             logger.debug("Token data returned");
             try
             {
@@ -149,70 +151,79 @@ public class OAuth2Return extends AbstractWebScript
             {
                 throw new WebScriptException("Error parsing access token response", e);
             }
-		}
-		
-		if (accessToken == null)
-		{
-	        throw new WebScriptException("No access token was found but this is required");
-		}
-		
-		// Persist the access token
-		Credentials c = credentialVault.retrieve(endpointName);
-		if (c == null)
-		{
-		    c = credentialVault.newCredentials(endpointName);
-		}
+        }
+
+        if (accessToken == null)
+        {
+            throw new WebScriptException("No access token was found but this is required");
+        }
+
+        // Persist the access token
+        Credentials c = credentialVault.retrieve(endpointId);
+        if (c == null)
+        {
+            c = credentialVault.newCredentials(endpointId);
+        }
         c.setProperty(OAuth2Credentials.CREDENTIAL_ACCESS_TOKEN, accessToken);
         c.setProperty(OAuth2Credentials.CREDENTIAL_REFRESH_TOKEN, refreshToken);
         credentialVault.save();
         
-		executeRedirect(req, resp);
-	}
-	
-	/**
-	 * Obtain a permanent access token from the OAuth service, utilising the OAuth connector to
-	 * perform the necessary signing of requests.
-	 * 
-	 * TODO Check if we can make this more secure by auto-finding the endpoint name
-	 * 
-	 * @param endpointName
-	 * @param verifier
-	 * @param req
-	 * @param oauthConnector
-	 * @return
-	 * @throws HttpException
-	 * @throws IOException
-	 */
-	private JSONObject requestAccessToken(
-			String endpointName, 
-			String verifier,
-			WebScriptRequest req) throws HttpException, IOException
-	{
-	    // TODO use an endpoint to make this connection
-	    
-		HttpClient client = new HttpClient();
-		
-		String tokenUrl = getAccessTokenUrl(),
-		        postUri = endpointName != null ?
-		        req.getServerPath() + req.getContextPath() + URL_PROXY_SERVLET + "/" + 
-		        endpointName + tokenUrl : tokenUrl;
-		
-		PostMethod method = new PostMethod(postUri);
-		
-		if (logger.isDebugEnabled())
-		{
-		    logger.debug("Sending OAuth return code " + verifier + " to " + postUri);
-		}
-		
+        executeRedirect(req, resp);
+    }
+
+    /**
+     * Obtain a permanent access token from the OAuth service, utilising the OAuth connector to
+     * perform the necessary signing of requests.
+     * 
+     * TODO Check if we can make this more secure by auto-finding the endpoint name
+     * 
+     * @param endpointId
+     * @param verifier
+     * @param req
+     * @param oauthConnector
+     * @return
+     * @throws HttpException
+     * @throws IOException
+     */
+    private JSONObject requestAccessToken(
+            ConnectorDescriptor cd, 
+            String verifier,
+            WebScriptRequest req) throws HttpException, IOException
+    {
+        String tokenUrl = cd.getStringProperty(PROP_ACCESS_TOKEN_URL),
+                clientId = cd.getStringProperty(PROP_CLIENT_ID),
+                clientSecret = cd.getStringProperty(PROP_CLIENT_SECRET);
+        
+        if (tokenUrl == null)
+        {
+            throw new IllegalArgumentException("Parameter 'access-token-url' must be provided on connector");
+        }
+        if (clientId == null)
+        {
+            throw new IllegalArgumentException("Parameter 'client-id' must be provided on connector");
+        }
+        if (clientSecret == null)
+        {
+            throw new IllegalArgumentException("Parameter 'client-secret' must be provided on connector");
+        }
+        
+        HttpClient client = new HttpClient();
+        PostMethod method = new PostMethod(tokenUrl);
+        
+        if (logger.isDebugEnabled())
+        {
+            logger.debug("Sending OAuth return code " + verifier + " to " + tokenUrl);
+        }
+        
         String baseUrl = req.getURL();
         if (baseUrl.indexOf('?') != -1)
             baseUrl = baseUrl.substring(0, baseUrl.indexOf('?'));
-		
-		method.addParameter("code", verifier);
-		method.addParameter("grant_type", "authorization_code");
-		method.addParameter("redirect_uri", req.getServerPath() + baseUrl);
-		
-		// Add client ID and secret if specified in the config
+        
+        method.addParameter("code", verifier);
+        method.addParameter("grant_type", "authorization_code");
+        method.addParameter("redirect_uri", req.getServerPath() + baseUrl);
+        
+        // Add client ID and secret if specified in the config
         if (clientId != null)
         {
             method.addParameter("client_id", clientId);
@@ -224,21 +235,21 @@ public class OAuth2Return extends AbstractWebScript
         
         // Request JSON response
         method.addRequestHeader("Accept", Format.JSON.mimetype());
-		
-		int statusCode = client.executeMethod(method);
-		
-		// errors may be {"error":"invalid_grant","error_description":"expired authorization code"}
-		// or {"error":"redirect_uri_mismatch","error_description":"redirect_uri must match configuration"}
+        
+        int statusCode = client.executeMethod(method);
+        
+        // errors may be {"error":"invalid_grant","error_description":"expired authorization code"}
+        // or {"error":"redirect_uri_mismatch","error_description":"redirect_uri must match configuration"}
 
         byte[] responseBody = method.getResponseBody();
         String tokenResp = new String(responseBody, Charset.forName("UTF-8"));
         
-	    // do something with the input stream, which contains the new parameters in the body
-	    if (logger.isDebugEnabled())
+        // do something with the input stream, which contains the new parameters in the body
+        if (logger.isDebugEnabled())
         {
             logger.debug("Received token response " + tokenResp);
         }
-	    
+        
         try
         {
             JSONObject authResponse = new JSONObject(new JSONTokener(tokenResp));
@@ -260,26 +271,26 @@ public class OAuth2Return extends AbstractWebScript
             throw new WebScriptException("A problem occurred parsing the JSON response from the provider");
         }
         
-	}
-	
-	/**
-	 * Redirect the user to the location that was specified in the request parameter, or
-	 * to the webapp context root if this was not found
-	 * 
-	 * @param req
-	 * @param resp
-	 */
-	private void executeRedirect(WebScriptRequest req, WebScriptResponse resp)
-	{
-	    String redirectPage = null, state = req.getParameter(PARAM_STATE);
-	    if (req.getParameter(PARAM_REDIRECT_PAGE) != null)
-	    {
-	        redirectPage = req.getParameter(PARAM_REDIRECT_PAGE).indexOf('/') == 0 ? 
-	                req.getParameter(PARAM_REDIRECT_PAGE) : 
-	                    "/" + req.getParameter(PARAM_REDIRECT_PAGE);
-	    }
-	    else if (state != null) // TODO extract into utility method
-	    {
+    }
+    
+    /**
+     * Redirect the user to the location that was specified in the request parameter, or
+     * to the webapp context root if this was not found
+     * 
+     * @param req
+     * @param resp
+     */
+    private void executeRedirect(WebScriptRequest req, WebScriptResponse resp)
+    {
+        String redirectPage = null, state = req.getParameter(PARAM_STATE);
+        if (req.getParameter(PARAM_REDIRECT_PAGE) != null)
+        {
+            redirectPage = req.getParameter(PARAM_REDIRECT_PAGE).indexOf('/') == 0 ? 
+                    req.getParameter(PARAM_REDIRECT_PAGE) : 
+                        "/" + req.getParameter(PARAM_REDIRECT_PAGE);
+        }
+        else if (state != null) // TODO extract into utility method
+        {
             if (logger.isDebugEnabled())
                 logger.debug("Found state: " + state);
             String rp = null;
@@ -292,52 +303,12 @@ public class OAuth2Return extends AbstractWebScript
             }
             if (rp != null)
                 redirectPage = rp.indexOf('/') == 0 ? rp : "/" + rp;
-	    }
-		String redirectLocation = req.getServerPath() + req.getContextPath() + (redirectPage != null ? redirectPage : "");
+        }
+        String redirectLocation = req.getServerPath() + req.getContextPath() + (redirectPage != null ? redirectPage : "");
         if (logger.isDebugEnabled())
             logger.debug("Redirecting user to URL " + redirectLocation);
-		resp.addHeader(WebScriptResponse.HEADER_LOCATION, redirectLocation);
-		resp.setStatus(Status.STATUS_MOVED_TEMPORARILY);
-	}
-
-    public String getEndpointId()
-    {
-        return endpointId;
-    }
-
-    public void setEndpointId(String endpointId)
-    {
-        this.endpointId = endpointId;
-    }
-
-    public String getClientId()
-    {
-        return clientId;
-    }
-
-    public void setClientId(String clientId)
-    {
-        this.clientId = clientId;
-    }
-
-    public String getClientSecret()
-    {
-        return clientSecret;
-    }
-
-    public void setClientSecret(String clientSecret)
-    {
-        this.clientSecret = clientSecret;
-    }
-    
-    public String getAccessTokenUrl()
-    {
-        return accessTokenUrl;
-    }
-
-    public void setAccessTokenUrl(String accessTokenUrl)
-    {
-        this.accessTokenUrl = accessTokenUrl;
+        resp.addHeader(WebScriptResponse.HEADER_LOCATION, redirectLocation);
+        resp.setStatus(Status.STATUS_MOVED_TEMPORARILY);
     }
 
     public ConnectorService getConnectorService()

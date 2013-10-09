@@ -15,7 +15,6 @@
     
     <!--
     Web script to receive OAuth 2.0 verification codes, exchange them for an access token and store this to the credential store
-    This must be extended to add the required properties for the specific service provider being used and cannot be used directly.
     -->
     <bean id="webscript.org.sharextras.slingshot.oauth2-return.get" class="org.sharextras.webscripts.OAuth2Return" parent="webscript">
         <property name="connectorService">
