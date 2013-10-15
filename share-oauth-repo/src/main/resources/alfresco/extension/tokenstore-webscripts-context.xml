@@ -1,0 +1,19 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!DOCTYPE beans PUBLIC '-//SPRING//DTD BEAN//EN' 'http://www.springframework.org/dtd/spring-beans.dtd'>
+<beans>
+
+    <bean id="webscript.org.sharextras.slingshot.oauth.oauth-token.get" 
+            class="org.sharextras.oauth.repo.webscripts.GetOAuthToken" parent="webscript">
+        <property name="oauth2CredentialsStoreService">
+            <ref bean="oauth2CredentialsStoreService" />
+        </property>
+    </bean>
+
+    <bean id="webscript.org.sharextras.slingshot.oauth.oauth-token.post" 
+            class="org.sharextras.oauth.repo.webscripts.SaveOAuthToken" parent="webscript">
+        <property name="oauth2CredentialsStoreService">
+            <ref bean="oauth2CredentialsStoreService" />
+        </property>
+    </bean>
+
+</beans>

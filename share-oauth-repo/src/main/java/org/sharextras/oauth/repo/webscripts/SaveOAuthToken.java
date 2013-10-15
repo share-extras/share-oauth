@@ -1,4 +1,4 @@
-package org.alfresco.integrations.salesforce.chatter;
+package org.sharextras.oauth.repo.webscripts;
 
 import java.io.IOException;
 import java.util.Date;
