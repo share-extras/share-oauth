@@ -1,6 +1,8 @@
 package org.sharextras.webscripts.connector;
 
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -15,6 +17,7 @@ import org.springframework.extensions.config.RemoteConfigElement.ConnectorDescri
 import org.springframework.extensions.surf.exception.ConnectorServiceException;
 import org.springframework.extensions.surf.exception.CredentialVaultProviderException;
 import org.springframework.extensions.surf.util.FakeHttpServletResponse;
+import org.springframework.extensions.webscripts.Format;
 import org.springframework.extensions.webscripts.connector.ConnectorContext;
 import org.springframework.extensions.webscripts.connector.ConnectorService;
 import org.springframework.extensions.webscripts.connector.Credentials;
@@ -22,6 +25,7 @@ import org.springframework.extensions.webscripts.connector.HttpConnector;
 import org.springframework.extensions.webscripts.connector.RemoteClient;
 import org.springframework.extensions.webscripts.connector.Response;
 import org.springframework.extensions.webscripts.connector.ResponseStatus;
+import org.springframework.extensions.webscripts.json.JSONWriter;
 
 /**
  * Connector for connecting to OAuth 2.0-protected resources
@@ -81,103 +85,105 @@ public class HttpOAuth2Connector extends HttpConnector
         try
         {
             Response resp = null;
-            HttpSession session = req.getSession();
+            HttpSession session = req.getSession(false); // TODO check session is non-null
             if (!hasAccessToken(session))
             {
                 loadTokens(uri, req);
             }
-            if (logger.isDebugEnabled())
-                logger.debug("Loading resource " + uri + " - first attempt");
+
             if (hasAccessToken(session))
             {
-                context.setCommitResponseOnAuthenticationError(false);
-                
-                // Wrap the response object, since it gets committed straight away
+                // Wrap the response object, since it gets committed straight away, and we may need to retry
                 FakeHttpServletResponse wrappedRes = new FakeHttpServletResponse(res);
+                
+                // First call
+                context.setCommitResponseOnAuthenticationError(false);
+                if (logger.isDebugEnabled())
+                    logger.debug("Loading resource " + uri + " - first attempt");
                 resp = callInternal(uri, context, req, wrappedRes);
+                
                 if (logger.isDebugEnabled())
                     logger.debug("Response status " + resp.getStatus().getCode() + " " + resp.getStatus().getCodeName());
-                // We could have a cached access token which has been updated in the repo
+                
+                // We could have a revoked or expired access token cached which has been updated in the repo
                 
                 if (resp.getStatus().getCode() == ResponseStatus.STATUS_UNAUTHORIZED || 
                         resp.getStatus().getCode() == ResponseStatus.STATUS_FORBIDDEN)
                 {
                     if (logger.isDebugEnabled())
                         logger.debug("Loading resource " + uri + " - second attempt");
+                    
                     loadTokens(uri, req);
-                    // Retry the operation
+                    
+                    // Retry the operation - second call
                     if (hasAccessToken(session))
                     {
                         context.setCommitResponseOnAuthenticationError(true);
                         try
                         {
                             resp = callInternal(uri, context, req, res);
+
                             if (logger.isDebugEnabled())
                                 logger.debug("Response status " + resp.getStatus().getCode() + " " + resp.getStatus().getCodeName());
                         }
                         catch (Throwable t)
                         {
-                            logger.error("Encountered error when attempting to reload", t);
+                            writeError(res, ResponseStatus.STATUS_INTERNAL_SERVER_ERROR, 
+                                    "ERR_CALLOUT", 
+                                    "Encountered error when attempting to reload",
+                                    t);
+                            return null;
                         }
                     }
                     else
                     {
-                        throw new RuntimeException("No access token is present");
+                        writeError(res, ResponseStatus.STATUS_UNAUTHORIZED, 
+                                "NO_TOKEN", 
+                                "No access token is present",
+                                null);
+                        return null;
                     }
                 }
                 else
                 {
-                    res.setStatus(wrappedRes.getStatus());
-                    res.setCharacterEncoding(wrappedRes.getCharacterEncoding());
-                    // Copy headers over
-                    for (Object hdrname : wrappedRes.getHeaderNames())
-                    {
-                        res.setHeader((String) hdrname, (String) wrappedRes.getHeader((String) hdrname));
-                    }
-                    res.getOutputStream().write(wrappedRes.getContentAsByteArray());
-                    res.flushBuffer();
+                    copyResponseContent(wrappedRes, res, true);
                 }
             }
             else
             {
-                // TODO Support unauthenticated access if allowed by the connector instance
-                ResponseStatus status = new ResponseStatus();
-                status.setCode(ResponseStatus.STATUS_UNAUTHORIZED);
-                status.setMessage("No access token is present");
-                resp = new Response(status);
-                res.setStatus(ResponseStatus.STATUS_UNAUTHORIZED);
-                //throw new RuntimeException("No access token is present");
+                writeError(res, ResponseStatus.STATUS_UNAUTHORIZED, 
+                        "NO_TOKEN", 
+                        "No access token is present",
+                        null);
+                return null;
                 
             }
             
             return resp;
         }
-        // TODO return responses with errors when we are able to
         catch (CredentialVaultProviderException e)
         {
-            /*
-             * ResponseStatus status = new ResponseStatus();
-            status.setCode(ResponseStatus.STATUS_INTERNAL_SERVER_ERROR);
-            status.setMessage("Unable to retrieve OAuth credentials from credential vault");
-            status.setException(e);
-            return new Response(status);
-            */
-            throw new RuntimeException("Unable to retrieve OAuth credentials from credential vault", e);
+            writeError(res, ResponseStatus.STATUS_INTERNAL_SERVER_ERROR, 
+                    "ERR_CREDENTIALSTORE", 
+                    "Unable to load credential store",
+                    e);
+            return null;
         }
         catch (ConnectorServiceException e)
         {
-            /*
-            ResponseStatus status = new ResponseStatus();
-            status.setCode(ResponseStatus.STATUS_INTERNAL_SERVER_ERROR);
-            status.setMessage("Unable to access Alfresco connector in order to retrieve OAuth credentials");
-            status.setException(e);
-            return new Response(status);
-            */
-            throw new RuntimeException("Unable to access Alfresco connector in order to retrieve OAuth credentials", e);
+            writeError(res, ResponseStatus.STATUS_INTERNAL_SERVER_ERROR, 
+                    "ERR_FETCH_CREDENTIALS", 
+                    "Unable to retrieve OAuth credentials from credential vault",
+                    e);
+            return null;
         }
         catch (IOException e)
         {
-            throw new RuntimeException("Error encountered copying outputstream", e);
+            writeError(res, ResponseStatus.STATUS_INTERNAL_SERVER_ERROR, 
+                    "ERR_COPY_RESPONSE", 
+                    "Error encountered copying outputstream",
+                    e);
+            return null;
         }
     }
 
@@ -190,7 +196,7 @@ public class HttpOAuth2Connector extends HttpConnector
     {
         logger.debug("Loading OAuth tokens");
         
-        HttpSession session = request.getSession();
+        HttpSession session = request.getSession(false);
         if (session != null)
         {
             String userId = (String)session.getAttribute(USER_ID);
@@ -214,6 +220,54 @@ public class HttpOAuth2Connector extends HttpConnector
         else
         {
             logger.error("Session should not be null!");
+        }
+    }
+
+    private void copyResponseContent(FakeHttpServletResponse source, HttpServletResponse dest, boolean flush) throws IOException
+    {
+        dest.setStatus(source.getStatus());
+        dest.setCharacterEncoding(source.getCharacterEncoding());
+        // Copy headers over
+        for (Object hdrname : source.getHeaderNames())
+        {
+            dest.setHeader((String) hdrname, (String) source.getHeader((String) hdrname));
+        }
+        dest.getOutputStream().write(source.getContentAsByteArray());
+        if (flush)
+        {
+            dest.flushBuffer();
+        }
+    }
+
+    private void writeError(HttpServletResponse resp, int status, String id, String message, Throwable e)
+    {
+        resp.setStatus(status);
+        resp.setContentType(Format.JSON.mimetype());
+        try
+        {
+            JSONWriter writer = new JSONWriter(resp.getWriter());
+            writer.startObject();
+            writer.startValue("error").startObject();
+            writer.writeValue("id", id);
+            writer.writeValue("message", message);
+            if (e != null)
+            {
+                writer.startValue("exception").startObject();
+                writer.writeValue("message", e.getMessage());
+                StringWriter sw = new StringWriter();
+                PrintWriter pw = new PrintWriter(sw);
+                e.printStackTrace(pw);
+                writer.writeValue("stackTrace", sw.toString());
+                writer.endObject();
+            }
+            writer.endObject();
+            writer.endObject();
+            resp.flushBuffer();
+        }
+        catch (IOException e1)
+        {
+            // Unable to get writer from response
+            e1.printStackTrace();
         }
     }
 
