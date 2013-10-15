@@ -19,6 +19,7 @@
 
     <modules>
         <module>share-oauth</module>
+        <module>share-oauth-repo</module>
     </modules>
 
 </project>

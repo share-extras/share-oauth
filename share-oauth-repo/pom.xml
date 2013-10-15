@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>org.sharextras</groupId>
+    <artifactId>share-oauth-repo</artifactId>
+    <packaging>jar</packaging>
+    <name>Share OAuth Repository</name>
+    <url>http://sharextras.org</url>
+
+    <properties>
+        <buildnumber>SNAPSHOT</buildnumber>
+        <alfresco.groupId>org.alfresco</alfresco.groupId>
+        <alfresco.version>4.2.d</alfresco.version>
+        <!-- This controls which properties will be picked in src/test/properties for embedded run -->
+        <env>local</env>
+    </properties>
+
+    <parent>
+        <groupId>org.sharextras</groupId>
+        <artifactId>share-oauth-parent</artifactId>
+        <version>2.3-SNAPSHOT</version>
+    </parent>
+
+    <repositories>
+        <repository>
+            <id>alfresco-public</id>
+            <url>https://artifacts.alfresco.com/nexus/content/groups/public</url>
+        </repository>
+    </repositories>
+
+    <dependencies>
+        <dependency>
+            <groupId>${alfresco.groupId}</groupId>
+            <artifactId>alfresco-repository</artifactId>
+            <version>${alfresco.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <!-- Test dependencies -->
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <version>4.8.1</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <distributionManagement>
+        <repository>
+            <id>alfresco-artifacts</id>
+            <name>Alfresco Share Extras Release Repository</name>
+            <url>https://artifacts.alfresco.com/nexus/content/repositories/share-extras</url>
+            <layout>default</layout>
+        </repository>
+        <snapshotRepository>
+            <id>alfresco-artifacts-snapshots</id>
+            <name>Alfresco Share Extras Snapshot Repository</name>
+            <url>https://artifacts.alfresco.com/nexus/content/repositories/share-extras-snapshots</url>
+        </snapshotRepository>
+    </distributionManagement>
+
+</project>
