@@ -137,31 +137,28 @@ public class OAuth2Return extends AbstractWebScript
         // TODO return a map or object, not a JSON object here
         JSONObject authParams = requestAccessToken(tokenUrl, clientId, clientSecret, code, req);
 
-        if (logger.isDebugEnabled())
+        logger.debug("Token data returned");
+        try
         {
-            logger.debug("Token data returned");
-            try
+            // TODO use constants for parameter names
+            if (authParams.has("access_token"))
             {
-                // TODO use constants for parameter names
-                if (authParams.has("access_token"))
-                {
-                    logger.debug("access_token: " + authParams.getString("access_token"));
-                    accessToken = authParams.getString("access_token");
-                }
-                if (authParams.has("instance_url"))
-                {
-                    logger.debug("instance_url: " + authParams.getString("instance_url"));
-                }
-                if (authParams.has("refresh_token"))
-                {
-                    logger.debug("refresh_token: " + authParams.getString("refresh_token"));
-                    refreshToken = authParams.getString("refresh_token");
-                }
+                logger.debug("access_token: " + authParams.getString("access_token"));
+                accessToken = authParams.getString("access_token");
             }
-            catch (JSONException e)
+            if (authParams.has("instance_url"))
             {
-                throw new WebScriptException("Error parsing access token response", e);
+                logger.debug("instance_url: " + authParams.getString("instance_url"));
             }
+            if (authParams.has("refresh_token"))
+            {
+                logger.debug("refresh_token: " + authParams.getString("refresh_token"));
+                refreshToken = authParams.getString("refresh_token");
+            }
+        }
+        catch (JSONException e)
+        {
+            throw new WebScriptException("Error parsing access token response", e);
         }
 
         if (accessToken == null)
