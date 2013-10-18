@@ -44,12 +44,13 @@ public class OAuth2Authenticator extends AbstractAuthenticator implements Applic
 
     private static final String ENDPOINT_ALFRESCO = "alfresco";
     private static final String VAULT_PROVIDER_ID = "oAuth2CredentialVaultProvider";
-    private static final String POST_LOGIN = "grant_type=refresh_token&refresh_token={0}&client_id={1}";
+    protected static final String POST_LOGIN = "grant_type=refresh_token&refresh_token={0}&client_id={1}";
     //private static final String API_LOGIN = "/api/login";
     //private static final String MIMETYPE_APPLICATION_JSON = "application/json";
-    private static final String MIMETYPE_URLENCODED = "x-www-form-urlencoded";
-    
+    protected static final String MIMETYPE_URLENCODED = "x-www-form-urlencoded";
+
     public final static String CS_PARAM_ACCESS_TOKEN = "accessToken";
+    public final static String CS_PARAM_REFRESH_TOKEN = "refreshToken";
     
     // For Chatter this should be https://login.instance_name/services/oauth2/token
     private String requestTokenUri;

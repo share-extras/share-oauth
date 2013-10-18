@@ -3,6 +3,7 @@ package org.sharextras.webscripts.connector;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.nio.charset.Charset;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -10,14 +11,21 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
 
+import org.apache.commons.httpclient.HttpClient;
+import org.apache.commons.httpclient.HttpException;
+import org.apache.commons.httpclient.methods.PostMethod;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.json.JSONException;
+import org.json.JSONObject;
 import org.springframework.context.ApplicationContext;
 import org.springframework.extensions.config.RemoteConfigElement.ConnectorDescriptor;
+import org.springframework.extensions.config.RemoteConfigElement.EndpointDescriptor;
 import org.springframework.extensions.surf.exception.ConnectorServiceException;
 import org.springframework.extensions.surf.exception.CredentialVaultProviderException;
 import org.springframework.extensions.surf.util.FakeHttpServletResponse;
 import org.springframework.extensions.webscripts.Format;
+import org.springframework.extensions.webscripts.Status;
 import org.springframework.extensions.webscripts.connector.ConnectorContext;
 import org.springframework.extensions.webscripts.connector.ConnectorService;
 import org.springframework.extensions.webscripts.connector.Credentials;
@@ -74,30 +82,44 @@ public class HttpOAuth2Connector extends HttpConnector
         return descriptorMethod != null ? descriptorMethod : AUTH_METHOD_OAUTH;
     }
     
-    protected boolean hasAccessToken(HttpSession session)
+    protected boolean hasAccessToken()
     {
         return !(getConnectorSession() == null || getConnectorSession().getParameter(OAuth2Authenticator.CS_PARAM_ACCESS_TOKEN) == null);
+    }
+
+    protected boolean hasRefreshToken()
+    {
+        return !(getConnectorSession() == null || getConnectorSession().getParameter(OAuth2Authenticator.CS_PARAM_REFRESH_TOKEN) == null);
+    }
+
+    protected String getAccessToken()
+    {
+        return getConnectorSession() != null ? getConnectorSession().getParameter(OAuth2Authenticator.CS_PARAM_ACCESS_TOKEN) : null;
+    }
+
+    protected String getRefreshToken()
+    {
+        return getConnectorSession() != null ? getConnectorSession().getParameter(OAuth2Authenticator.CS_PARAM_REFRESH_TOKEN) : null;
     }
 
     @Override
     public Response call(String uri, ConnectorContext context, HttpServletRequest req, HttpServletResponse res)
     {
+        String endpointId = getEndpointId(uri, req);
         try
         {
             Response resp = null;
-            HttpSession session = req.getSession(false); // TODO check session is non-null
-            if (!hasAccessToken(session))
+            if (!hasAccessToken())
             {
-                loadTokens(uri, req);
+                loadTokens(endpointId, req);
             }
 
-            if (hasAccessToken(session))
+            if (hasAccessToken())
             {
                 // Wrap the response object, since it gets committed straight away, and we may need to retry
                 FakeHttpServletResponse wrappedRes = new FakeHttpServletResponse(res);
                 
                 // First call
-                context.setCommitResponseOnAuthenticationError(false);
                 if (logger.isDebugEnabled())
                     logger.debug("Loading resource " + uri + " - first attempt");
                 resp = callInternal(uri, context, req, wrappedRes);
@@ -112,27 +134,18 @@ public class HttpOAuth2Connector extends HttpConnector
                 {
                     if (logger.isDebugEnabled())
                         logger.debug("Loading resource " + uri + " - second attempt");
+
+                    String accessToken = getAccessToken();
+                    loadTokens(endpointId, req);
                     
-                    loadTokens(uri, req);
-                    
-                    // Retry the operation - second call
-                    if (hasAccessToken(session))
+                    // Retry the operation - second call, only if a different access token was found
+                    if (hasAccessToken())
                     {
-                        context.setCommitResponseOnAuthenticationError(true);
-                        try
+                        if (!getAccessToken().equals(accessToken))
                         {
                             resp = callInternal(uri, context, req, res);
-
                             if (logger.isDebugEnabled())
                                 logger.debug("Response status " + resp.getStatus().getCode() + " " + resp.getStatus().getCodeName());
-                        }
-                        catch (Throwable t)
-                        {
-                            writeError(res, ResponseStatus.STATUS_INTERNAL_SERVER_ERROR, 
-                                    "ERR_CALLOUT", 
-                                    "Encountered error when attempting to reload",
-                                    t);
-                            return null;
                         }
                     }
                     else
@@ -147,6 +160,30 @@ public class HttpOAuth2Connector extends HttpConnector
                 else
                 {
                     copyResponseContent(wrappedRes, res, true);
+                }
+
+                // TRY TOKEN REFRESH
+
+                if (resp.getStatus().getCode() == ResponseStatus.STATUS_UNAUTHORIZED)
+                {
+                    try
+                    {
+                        String oldToken = getAccessToken();
+                        String newToken = doRefresh(endpointId);
+                        if (newToken != null && !newToken.equals(oldToken))
+                        {
+                            connectorSession.setParameter(OAuth2Authenticator.CS_PARAM_ACCESS_TOKEN, newToken);
+                            saveTokens(endpointId, req);
+                            resp = callInternal(uri, context, req, res);
+                        }
+                    }
+                    catch (TokenRefreshException e)
+                    {
+                        writeError(res, ResponseStatus.STATUS_INTERNAL_SERVER_ERROR, 
+                                "ERR_REFRESH_TOKEN", 
+                                "Unable to refresh token",
+                                e);
+                    }
                 }
             }
             else
@@ -189,37 +226,89 @@ public class HttpOAuth2Connector extends HttpConnector
 
     protected Response callInternal(String uri, ConnectorContext context, HttpServletRequest req, HttpServletResponse res)
     {
-        return super.call(uri, context, req, res);
+        try
+        {
+            return super.call(uri, context, req, res);
+        }
+        catch (Throwable t)
+        {
+            writeError(res, ResponseStatus.STATUS_INTERNAL_SERVER_ERROR, 
+                    "ERR_CALLOUT", 
+                    "Encountered error when attempting to reload",
+                    t);
+            return null;
+        }
     }
 
-    protected void loadTokens(String uri, HttpServletRequest request) throws CredentialVaultProviderException, ConnectorServiceException
+    private String getUserId(HttpSession session)
     {
-        logger.debug("Loading OAuth tokens");
-        
+        return (String) session.getAttribute(USER_ID);
+    }
+
+    private OAuth2CredentialVault getCredentialVault(String endpointId, HttpServletRequest request, boolean load) 
+            throws CredentialVaultProviderException, ConnectorServiceException
+    {
         HttpSession session = request.getSession(false);
         if (session != null)
         {
-            String userId = (String)session.getAttribute(USER_ID);
-            String endpointId = getEndpointId() != null ? getEndpointId() : 
-                request.getPathInfo().replaceAll(uri, "").replaceAll("/proxy/", "");
-
-            ConnectorService connectorService = (ConnectorService) applicationContext.getBean("connector.service");
+            String userId = getUserId(session);
+            ConnectorService connectorService = getConnectorService();
 
             OAuth2CredentialVault vault = (OAuth2CredentialVault)connectorService.getCredentialVault(session, userId, VAULT_PROVIDER_ID);
-            vault.load(endpointId, connectorService.getConnector("alfresco", userId, session));
-            Credentials oauthCredentials = vault.retrieve(endpointId);
-            if (oauthCredentials != null)
+            if (load)
             {
-                if (oauthCredentials.getProperty(OAuth2Authenticator.CS_PARAM_ACCESS_TOKEN) != null)
-                {
-                    connectorSession.setParameter(OAuth2Authenticator.CS_PARAM_ACCESS_TOKEN, 
-                            oauthCredentials.getProperty(OAuth2Authenticator.CS_PARAM_ACCESS_TOKEN).toString());
-                }
+                vault.load(endpointId, connectorService.getConnector("alfresco", userId, session));
             }
+            return vault;
         }
         else
         {
             logger.error("Session should not be null!");
+            return null;
+        }
+    }
+
+    protected void loadTokens(String endpointId, HttpServletRequest request) throws CredentialVaultProviderException, ConnectorServiceException
+    {
+        logger.debug("Loading OAuth tokens for endpoint " + endpointId);
+        
+        OAuth2CredentialVault vault = getCredentialVault(endpointId, request, true);
+        Credentials oauthCredentials = vault.retrieve(endpointId);
+        if (oauthCredentials != null)
+        {
+            if (oauthCredentials.getProperty(OAuth2Authenticator.CS_PARAM_ACCESS_TOKEN) != null)
+            {
+                connectorSession.setParameter(OAuth2Authenticator.CS_PARAM_ACCESS_TOKEN, 
+                        oauthCredentials.getProperty(OAuth2Authenticator.CS_PARAM_ACCESS_TOKEN).toString());
+                connectorSession.setParameter(OAuth2Authenticator.CS_PARAM_REFRESH_TOKEN, 
+                        oauthCredentials.getProperty(OAuth2Authenticator.CS_PARAM_REFRESH_TOKEN).toString());
+            }
+        }
+    }
+
+    protected void saveTokens(String endpointId, HttpServletRequest request) throws CredentialVaultProviderException, ConnectorServiceException
+    {
+        logger.debug("Saving OAuth tokens for endpoint " + endpointId);
+        HttpSession session = request.getSession(false);
+        if (session != null)
+        {
+            String userId = getUserId(session);
+            ConnectorService connectorService = getConnectorService();
+
+            OAuth2CredentialVault vault = getCredentialVault(endpointId, request, true);
+            Credentials oauthCredentials = vault.retrieve(endpointId);
+            if (oauthCredentials != null)
+            {
+                oauthCredentials.setProperty(
+                        OAuth2Authenticator.CS_PARAM_ACCESS_TOKEN, 
+                        connectorSession.getParameter(OAuth2Authenticator.CS_PARAM_ACCESS_TOKEN)
+                );
+                oauthCredentials.setProperty(
+                        OAuth2Authenticator.CS_PARAM_REFRESH_TOKEN, 
+                        connectorSession.getParameter(OAuth2Authenticator.CS_PARAM_REFRESH_TOKEN)
+                );
+                vault.save(connectorService.getConnector("alfresco", userId, session));
+            }
         }
     }
 
@@ -297,9 +386,147 @@ public class HttpOAuth2Connector extends HttpConnector
         }
     }
 
+    // TODO replace AuthenticationException with something else
+    protected String doRefresh(String endpointId) throws TokenRefreshException
+    {
+        String refreshToken = connectorSession.getParameter(OAuth2Authenticator.CS_PARAM_REFRESH_TOKEN);
+        ConnectorService connectorService = getConnectorService();
+        EndpointDescriptor epd = connectorService.getRemoteConfig().getEndpointDescriptor(endpointId);
+
+        // First try to get the client-id and access-token-url from the endpoint, then from the connector
+        // TODO Make these strings constants in a Descriptor sub-class or interface
+        String clientId = epd.getStringProperty("client-id");
+        String tokenUrl = epd.getStringProperty("access-token-url");
+        if (clientId == null)
+        {
+            clientId = descriptor.getStringProperty("client-id");
+        }
+        if (tokenUrl == null)
+        {
+            tokenUrl = descriptor.getStringProperty("access-token-url");
+        }
+        /*
+        RemoteClient remoteClient = buildRemoteClient(tokenUrl);
+        
+        // POST to the request new access token URL
+        remoteClient.setRequestContentType(OAuth2Authenticator.MIMETYPE_URLENCODED);
+        String body = MessageFormat.format(OAuth2Authenticator.POST_LOGIN, URLEncoder.encodeUriComponent(refreshToken), 
+                URLEncoder.encodeUriComponent(clientId));
+        Map<String, String> headers = new HashMap<String, String>();
+        headers.put("Content-Length", "" + body.length());
+        headers.put("Accept", Format.JSON.mimetype());
+        remoteClient.setRequestProperties(headers);
+
+        if (logger.isDebugEnabled())
+            logger.debug("Calling refresh token URL " + tokenUrl + " with data " + body);
+
+        Response response = remoteClient.call(tokenUrl, body);
+        int statusCode = response.getStatus().getCode();
+        String tokenResp = response.getResponse();
+        */
+
+        HttpClient client = new HttpClient();
+        PostMethod method = new PostMethod(tokenUrl);
+        method.addParameter("grant_type", "refresh_token");
+        method.addParameter("refresh_token", refreshToken);
+        method.addParameter("client_id", clientId);
+        method.addRequestHeader("Accept", Format.JSON.mimetype());
+        
+        int statusCode;
+        try
+        {
+            statusCode = client.executeMethod(method);
+            byte[] responseBody = method.getResponseBody();
+            String tokenResp = new String(responseBody, Charset.forName("UTF-8"));
+
+            
+            if (statusCode == Status.STATUS_OK)
+            {
+                String accessToken;
+                try
+                {
+                    JSONObject json = new JSONObject(tokenResp);
+                    accessToken = json.getString("access_token");
+                } 
+                catch (JSONException jErr)
+                {
+                    // the ticket that came back could not be parsed
+                    // this will cause the entire handshake to fail
+                    throw new TokenRefreshException(
+                            "Unable to retrieve access token from provider response", jErr);
+                }
+                
+                if (logger.isDebugEnabled())
+                    logger.debug("Parsed access token: " + accessToken);
+                
+                return accessToken;
+            }
+            else
+            {
+                if (logger.isDebugEnabled())
+                    logger.debug("Token refresh failed, received response code: " + statusCode);
+                    logger.debug("Received response " + tokenResp);
+                return null;
+            }
+        }
+        catch (HttpException e)
+        {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+            return null;
+        }
+        catch (IOException e)
+        {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+            return null;
+        }
+    }
+    
     public String getEndpointId()
     {
         return descriptor.getStringProperty(PARAM_TOKEN_ENDPOINT);
+    }
+
+    private String getEndpointId(String uri, HttpServletRequest request)
+    {
+        return getEndpointId() != null ? getEndpointId() : 
+            request.getPathInfo().replaceAll(uri, "").replaceAll("/proxy/", "");
+        
+    }
+
+    private ConnectorService getConnectorService()
+    {
+        return (ConnectorService) applicationContext.getBean("connector.service");
+    }
+}
+
+class TokenRefreshException extends Exception
+{
+    private static final long serialVersionUID = 7258987860003313538L;
+
+    public TokenRefreshException()
+    {
+    }
+
+    public TokenRefreshException(String message)
+    {
+        super(message);
+    }
+
+    public TokenRefreshException(Throwable cause)
+    {
+        super(cause);
+    }
+
+    public TokenRefreshException(String message, Throwable cause)
+    {
+        super(message, cause);
+    }
+
+    public TokenRefreshException(String message, Throwable cause, boolean enableSuppression, boolean writableStackTrace)
+    {
+        super(message, cause, enableSuppression, writableStackTrace);
     }
 
 }
