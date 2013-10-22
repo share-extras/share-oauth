@@ -106,22 +106,28 @@ public class HttpOAuth2Connector extends HttpConnector
     public Response call(String uri, ConnectorContext context, HttpServletRequest req, HttpServletResponse res)
     {
         String endpointId = getEndpointId(uri, req);
+        
+        // Wrap the response object, since it gets committed straight away, and we may need to retry
+        FakeHttpServletResponse wrappedRes = new FakeHttpServletResponse(res);
+
+        Response resp = null;
+        boolean newlyLoaded = false;
+
         try
         {
-            Response resp = null;
             if (!hasAccessToken())
             {
+                logger.debug("No tokens found. Loading from tokenstore.");
                 loadTokens(endpointId, req);
+                newlyLoaded = true;
             }
 
             if (hasAccessToken())
             {
-                // Wrap the response object, since it gets committed straight away, and we may need to retry
-                FakeHttpServletResponse wrappedRes = new FakeHttpServletResponse(res);
-                
                 // First call
                 if (logger.isDebugEnabled())
                     logger.debug("Loading resource " + uri + " - first attempt");
+                
                 resp = callInternal(uri, context, req, wrappedRes);
                 
                 if (logger.isDebugEnabled())
@@ -129,11 +135,11 @@ public class HttpOAuth2Connector extends HttpConnector
                 
                 // We could have a revoked or expired access token cached which has been updated in the repo
                 
-                if (resp.getStatus().getCode() == ResponseStatus.STATUS_UNAUTHORIZED || 
-                        resp.getStatus().getCode() == ResponseStatus.STATUS_FORBIDDEN)
+                if (!newlyLoaded && (resp.getStatus().getCode() == ResponseStatus.STATUS_UNAUTHORIZED || 
+                        resp.getStatus().getCode() == ResponseStatus.STATUS_FORBIDDEN))
                 {
                     if (logger.isDebugEnabled())
-                        logger.debug("Loading resource " + uri + " - second attempt");
+                        logger.debug("Checking for updated access token");
 
                     String accessToken = getAccessToken();
                     loadTokens(endpointId, req);
@@ -143,60 +149,71 @@ public class HttpOAuth2Connector extends HttpConnector
                     {
                         if (!getAccessToken().equals(accessToken))
                         {
-                            resp = callInternal(uri, context, req, res);
+                            if (logger.isDebugEnabled())
+                                logger.debug("Token has been updated, retrying request for " + uri);
+                            resp = callInternal(uri, context, req, wrappedRes);
                             if (logger.isDebugEnabled())
                                 logger.debug("Response status " + resp.getStatus().getCode() + " " + resp.getStatus().getCodeName());
+                        }
+                        else
+                        {
+                            logger.debug("No updated token found");
                         }
                     }
                     else
                     {
-                        writeError(res, ResponseStatus.STATUS_UNAUTHORIZED, 
+                        writeError(wrappedRes, ResponseStatus.STATUS_UNAUTHORIZED, 
                                 "NO_TOKEN", 
                                 "No access token is present",
                                 null);
-                        return null;
-                    }
-                }
-                else
-                {
-                    copyResponseContent(wrappedRes, res, true);
-                }
-
-                // TRY TOKEN REFRESH
-
-                if (resp.getStatus().getCode() == ResponseStatus.STATUS_UNAUTHORIZED)
-                {
-                    try
-                    {
-                        String oldToken = getAccessToken();
-                        String newToken = doRefresh(endpointId);
-                        if (newToken != null && !newToken.equals(oldToken))
-                        {
-                            connectorSession.setParameter(OAuth2Authenticator.CS_PARAM_ACCESS_TOKEN, newToken);
-                            saveTokens(endpointId, req);
-                            resp = callInternal(uri, context, req, res);
-                        }
-                    }
-                    catch (TokenRefreshException e)
-                    {
-                        writeError(res, ResponseStatus.STATUS_INTERNAL_SERVER_ERROR, 
-                                "ERR_REFRESH_TOKEN", 
-                                "Unable to refresh token",
-                                e);
                     }
                 }
             }
             else
             {
-                writeError(res, ResponseStatus.STATUS_UNAUTHORIZED, 
+                writeError(wrappedRes, ResponseStatus.STATUS_UNAUTHORIZED, 
                         "NO_TOKEN", 
                         "No access token is present",
                         null);
-                return null;
                 
             }
-            
-            return resp;
+
+            // TRY TOKEN REFRESH
+
+            if (resp != null && resp.getStatus() != null &&
+                    resp.getStatus().getCode() == ResponseStatus.STATUS_UNAUTHORIZED && 
+                    hasRefreshToken()
+                    )
+            {
+                if (logger.isDebugEnabled())
+                    logger.debug("Trying to refresh access token - using refresh token " + getRefreshToken());
+                try
+                {
+                    String oldToken = getAccessToken();
+                    String newToken = doRefresh(endpointId);
+                    if (newToken != null && !newToken.equals(oldToken))
+                    {
+                        if (logger.isDebugEnabled())
+                            logger.debug("Got new access token " + newToken + " - retrying request for " + uri);
+                        connectorSession.setParameter(OAuth2Authenticator.CS_PARAM_ACCESS_TOKEN, newToken);
+                        saveTokens(endpointId, req);
+                        resp = callInternal(uri, context, req, wrappedRes);
+                    }
+                    else
+                    {
+                        logger.debug("No token returned or token not updated");
+                    }
+                }
+                catch (TokenRefreshException e)
+                {
+                    writeError(wrappedRes, ResponseStatus.STATUS_INTERNAL_SERVER_ERROR, 
+                            "ERR_REFRESH_TOKEN", 
+                            "Unable to refresh token",
+                            e);
+                }
+            }
+
+            copyResponseContent(wrappedRes, res, true);
         }
         catch (CredentialVaultProviderException e)
         {
@@ -204,7 +221,6 @@ public class HttpOAuth2Connector extends HttpConnector
                     "ERR_CREDENTIALSTORE", 
                     "Unable to load credential store",
                     e);
-            return null;
         }
         catch (ConnectorServiceException e)
         {
@@ -212,7 +228,6 @@ public class HttpOAuth2Connector extends HttpConnector
                     "ERR_FETCH_CREDENTIALS", 
                     "Unable to retrieve OAuth credentials from credential vault",
                     e);
-            return null;
         }
         catch (IOException e)
         {
@@ -220,8 +235,9 @@ public class HttpOAuth2Connector extends HttpConnector
                     "ERR_COPY_RESPONSE", 
                     "Error encountered copying outputstream",
                     e);
-            return null;
         }
+        
+        return resp;
     }
 
     protected Response callInternal(String uri, ConnectorContext context, HttpServletRequest req, HttpServletResponse res)
@@ -389,7 +405,7 @@ public class HttpOAuth2Connector extends HttpConnector
     // TODO replace AuthenticationException with something else
     protected String doRefresh(String endpointId) throws TokenRefreshException
     {
-        String refreshToken = connectorSession.getParameter(OAuth2Authenticator.CS_PARAM_REFRESH_TOKEN);
+        String refreshToken = getRefreshToken();
         ConnectorService connectorService = getConnectorService();
         EndpointDescriptor epd = connectorService.getRemoteConfig().getEndpointDescriptor(endpointId);
 
