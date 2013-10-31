@@ -296,8 +296,12 @@ public class HttpOAuth2Connector extends HttpConnector
             {
                 connectorSession.setParameter(OAuth2Authenticator.CS_PARAM_ACCESS_TOKEN, 
                         oauthCredentials.getProperty(OAuth2Authenticator.CS_PARAM_ACCESS_TOKEN).toString());
-                connectorSession.setParameter(OAuth2Authenticator.CS_PARAM_REFRESH_TOKEN, 
-                        oauthCredentials.getProperty(OAuth2Authenticator.CS_PARAM_REFRESH_TOKEN).toString());
+                // Store refresh token if available
+                if (oauthCredentials.getProperty(OAuth2Authenticator.CS_PARAM_REFRESH_TOKEN) != null)
+                {
+                    connectorSession.setParameter(OAuth2Authenticator.CS_PARAM_REFRESH_TOKEN, 
+                            oauthCredentials.getProperty(OAuth2Authenticator.CS_PARAM_REFRESH_TOKEN).toString());
+                }
             }
         }
     }
