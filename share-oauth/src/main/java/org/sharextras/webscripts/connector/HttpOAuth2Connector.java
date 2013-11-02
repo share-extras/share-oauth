@@ -113,6 +113,8 @@ public class HttpOAuth2Connector extends HttpConnector
         Response resp = null;
         boolean newlyLoaded = false;
 
+        context.setCommitResponseOnAuthenticationError(false);
+
         try
         {
             if (!hasAccessToken())
@@ -127,7 +129,8 @@ public class HttpOAuth2Connector extends HttpConnector
                 // First call
                 if (logger.isDebugEnabled())
                     logger.debug("Loading resource " + uri + " - first attempt");
-                
+
+                wrappedRes.reset();
                 resp = callInternal(uri, context, req, wrappedRes);
                 
                 if (logger.isDebugEnabled())
@@ -151,6 +154,7 @@ public class HttpOAuth2Connector extends HttpConnector
                         {
                             if (logger.isDebugEnabled())
                                 logger.debug("Token has been updated, retrying request for " + uri);
+                            wrappedRes.reset();
                             resp = callInternal(uri, context, req, wrappedRes);
                             if (logger.isDebugEnabled())
                                 logger.debug("Response status " + resp.getStatus().getCode() + " " + resp.getStatus().getCodeName());
@@ -197,6 +201,7 @@ public class HttpOAuth2Connector extends HttpConnector
                             logger.debug("Got new access token " + newToken + " - retrying request for " + uri);
                         connectorSession.setParameter(OAuth2Authenticator.CS_PARAM_ACCESS_TOKEN, newToken);
                         saveTokens(endpointId, req);
+                        wrappedRes.reset();
                         resp = callInternal(uri, context, req, wrappedRes);
                     }
                     else
@@ -213,7 +218,7 @@ public class HttpOAuth2Connector extends HttpConnector
                 }
             }
 
-            copyResponseContent(wrappedRes, res, true);
+            copyResponseContent(resp, wrappedRes, res, true);
         }
         catch (CredentialVaultProviderException e)
         {
@@ -332,16 +337,31 @@ public class HttpOAuth2Connector extends HttpConnector
         }
     }
 
-    private void copyResponseContent(FakeHttpServletResponse source, HttpServletResponse dest, boolean flush) throws IOException
+    private void copyResponseContent(Response resp, FakeHttpServletResponse source, HttpServletResponse dest, boolean flush) throws IOException
     {
-        dest.setStatus(source.getStatus());
+        byte[] bytes = source.getContentAsByteArray();
+        source.flushBuffer();
+        if (logger.isDebugEnabled())
+        {
+            logger.debug("Setting status " + resp.getStatus().getCode());
+            logger.debug("Setting encoding " + source.getCharacterEncoding());
+        }
+        dest.setStatus(resp.getStatus().getCode());
         dest.setCharacterEncoding(source.getCharacterEncoding());
         // Copy headers over
-        for (Object hdrname : source.getHeaderNames())
+        for (Map.Entry<String, String> header : resp.getStatus().getHeaders().entrySet())
         {
-            dest.setHeader((String) hdrname, (String) source.getHeader((String) hdrname));
+            dest.setHeader(header.getKey(), header.getValue());
+            if (logger.isDebugEnabled())
+            {
+                logger.debug("Add header " + header.getKey() + ": " + header.getValue());
+            }
         }
-        dest.getOutputStream().write(source.getContentAsByteArray());
+        if (logger.isDebugEnabled())
+        {
+            logger.debug("Add bytes " + bytes.length);
+        }
+        dest.getOutputStream().write(bytes);
         if (flush)
         {
             dest.flushBuffer();
