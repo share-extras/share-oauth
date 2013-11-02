@@ -341,22 +341,37 @@ public class HttpOAuth2Connector extends HttpConnector
     {
         byte[] bytes = source.getContentAsByteArray();
         source.flushBuffer();
-        if (logger.isDebugEnabled())
+        if (resp != null)
         {
-            logger.debug("Setting status " + resp.getStatus().getCode());
-            logger.debug("Setting encoding " + source.getCharacterEncoding());
-        }
-        dest.setStatus(resp.getStatus().getCode());
-        dest.setCharacterEncoding(source.getCharacterEncoding());
-        // Copy headers over
-        for (Map.Entry<String, String> header : resp.getStatus().getHeaders().entrySet())
-        {
-            dest.setHeader(header.getKey(), header.getValue());
             if (logger.isDebugEnabled())
             {
-                logger.debug("Add header " + header.getKey() + ": " + header.getValue());
+                logger.debug("Setting status " + resp.getStatus().getCode());
+                logger.debug("Setting encoding " + source.getCharacterEncoding());
+            }
+            dest.setStatus(resp.getStatus().getCode());
+            // Copy headers over
+            for (Map.Entry<String, String> header : resp.getStatus().getHeaders().entrySet())
+            {
+                dest.setHeader(header.getKey(), header.getValue());
+                if (logger.isDebugEnabled())
+                {
+                    logger.debug("Add header " + header.getKey() + ": " + header.getValue());
+                }
             }
         }
+        else // Error info is on the fake response
+        {
+            dest.setStatus(source.getStatus());
+            for (Object hdr : source.getHeaderNames())
+            {
+                dest.setHeader((String) hdr, (String) source.getHeader((String) hdr));
+                if (logger.isDebugEnabled())
+                {
+                    logger.debug("Add header " + (String) hdr + ": " + (String) source.getHeader((String) hdr));
+                }
+            }
+        }
+        dest.setCharacterEncoding(source.getCharacterEncoding());
         if (logger.isDebugEnabled())
         {
             logger.debug("Add bytes " + bytes.length);
