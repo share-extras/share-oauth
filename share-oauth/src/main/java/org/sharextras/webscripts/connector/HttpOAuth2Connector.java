@@ -343,19 +343,19 @@ public class HttpOAuth2Connector extends HttpConnector
         source.flushBuffer();
         if (resp != null)
         {
-            if (logger.isDebugEnabled())
+            if (logger.isTraceEnabled())
             {
-                logger.debug("Setting status " + resp.getStatus().getCode());
-                logger.debug("Setting encoding " + source.getCharacterEncoding());
+                logger.trace("Setting status " + resp.getStatus().getCode());
+                logger.trace("Setting encoding " + source.getCharacterEncoding());
             }
             dest.setStatus(resp.getStatus().getCode());
             // Copy headers over
             for (Map.Entry<String, String> header : resp.getStatus().getHeaders().entrySet())
             {
                 dest.setHeader(header.getKey(), header.getValue());
-                if (logger.isDebugEnabled())
+                if (logger.isTraceEnabled())
                 {
-                    logger.debug("Add header " + header.getKey() + ": " + header.getValue());
+                    logger.trace("Add header " + header.getKey() + ": " + header.getValue());
                 }
             }
         }
@@ -365,16 +365,16 @@ public class HttpOAuth2Connector extends HttpConnector
             for (Object hdr : source.getHeaderNames())
             {
                 dest.setHeader((String) hdr, (String) source.getHeader((String) hdr));
-                if (logger.isDebugEnabled())
+                if (logger.isTraceEnabled())
                 {
-                    logger.debug("Add header " + (String) hdr + ": " + (String) source.getHeader((String) hdr));
+                    logger.trace("Add header " + (String) hdr + ": " + (String) source.getHeader((String) hdr));
                 }
             }
         }
         dest.setCharacterEncoding(source.getCharacterEncoding());
-        if (logger.isDebugEnabled())
+        if (logger.isTraceEnabled())
         {
-            logger.debug("Add bytes " + bytes.length);
+            logger.trace("Add bytes " + bytes.length);
         }
         dest.getOutputStream().write(bytes);
         if (flush)
