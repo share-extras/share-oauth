@@ -130,7 +130,17 @@ public class OAuth2CredentialVault extends SimpleCredentialVault
         }
         else
         {
-            logger.error("Received response code " + response.getStatus().getCode() + " from token store");
+            if (response.getStatus().getCode() == Status.STATUS_NOT_FOUND)
+            {
+                if (logger.isDebugEnabled())
+                {
+                    logger.debug("No tokens stored for endpoint " + endpoint);
+                }
+            }
+            else
+            {
+                logger.error("Received response code " + response.getStatus().getCode() + " from token store");
+            }
         }
         
         return false;
