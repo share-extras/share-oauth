@@ -78,7 +78,7 @@ public class HttpOAuth2Connector extends HttpConnector
     
     private String getAuthenticationMethod()
     {
-        String descriptorMethod = descriptor.getStringProperty(PARAM_AUTH_METHOD);
+        String descriptorMethod = getDescriptorProperty(PARAM_AUTH_METHOD, (EndpointDescriptor) null);
         return descriptorMethod != null ? descriptorMethod : AUTH_METHOD_OAUTH;
     }
     
@@ -445,21 +445,12 @@ public class HttpOAuth2Connector extends HttpConnector
     protected String doRefresh(String endpointId) throws TokenRefreshException
     {
         String refreshToken = getRefreshToken();
-        ConnectorService connectorService = getConnectorService();
-        EndpointDescriptor epd = connectorService.getRemoteConfig().getEndpointDescriptor(endpointId);
+        EndpointDescriptor epd = getEndpointDescriptor(endpointId);
 
         // First try to get the client-id and access-token-url from the endpoint, then from the connector
         // TODO Make these strings constants in a Descriptor sub-class or interface
-        String clientId = epd.getStringProperty("client-id");
-        String tokenUrl = epd.getStringProperty("access-token-url");
-        if (clientId == null)
-        {
-            clientId = descriptor.getStringProperty("client-id");
-        }
-        if (tokenUrl == null)
-        {
-            tokenUrl = descriptor.getStringProperty("access-token-url");
-        }
+        String clientId = getDescriptorProperty("client-id", epd);
+        String tokenUrl = getDescriptorProperty("access-token-url", epd);
         /*
         RemoteClient remoteClient = buildRemoteClient(tokenUrl);
         
@@ -536,6 +527,31 @@ public class HttpOAuth2Connector extends HttpConnector
             e.printStackTrace();
             return null;
         }
+    }
+
+    protected EndpointDescriptor getEndpointDescriptor(String endpointId)
+    {
+        return getConnectorService().getRemoteConfig().getEndpointDescriptor(endpointId);
+    }
+
+    protected String getDescriptorProperty(String propertyName, EndpointDescriptor endpointDescriptor)
+    {
+        String propertyValue = null;
+        if (endpointDescriptor != null)
+        {
+            propertyValue = endpointDescriptor.getStringProperty(propertyName);
+        }
+        // Fall back to connector property if not found on endpoint
+        if (propertyValue == null)
+        {
+            propertyValue = descriptor.getStringProperty(propertyName);
+        }
+        return propertyValue;
+    }
+
+    protected String getDescriptorProperty(String propertyName, String endpointId)
+    {
+        return getDescriptorProperty(propertyName, getEndpointDescriptor(endpointId));
     }
     
     public String getEndpointId()
