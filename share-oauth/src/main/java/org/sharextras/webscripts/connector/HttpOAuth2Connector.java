@@ -111,7 +111,7 @@ public class HttpOAuth2Connector extends HttpConnector
         FakeHttpServletResponse wrappedRes = new FakeHttpServletResponse(res);
 
         Response resp = null;
-        boolean newlyLoaded = false;
+        boolean newlyLoaded = false, tokensChanged = false;
 
         context.setCommitResponseOnAuthenticationError(false);
 
@@ -193,20 +193,36 @@ public class HttpOAuth2Connector extends HttpConnector
                     logger.debug("Trying to refresh access token - using refresh token " + getRefreshToken());
                 try
                 {
-                    String oldToken = getAccessToken();
-                    String newToken = doRefresh(endpointId);
+                    String oldToken = getAccessToken(), oldRefreshToken = getRefreshToken();
+                    JSONObject json = doRefresh(endpointId);
+                    String newToken = json.getString("access_token");
+                    if (logger.isDebugEnabled())
+                        logger.debug("Parsed access token: " + newToken);
                     if (newToken != null && !newToken.equals(oldToken))
                     {
                         if (logger.isDebugEnabled())
                             logger.debug("Got new access token " + newToken + " - retrying request for " + uri);
                         connectorSession.setParameter(OAuth2Authenticator.CS_PARAM_ACCESS_TOKEN, newToken);
-                        saveTokens(endpointId, req);
+                        tokensChanged = true;
+                        // Retry the call
                         wrappedRes.reset();
                         resp = callInternal(uri, context, req, wrappedRes);
                     }
                     else
                     {
                         logger.debug("No token returned or token not updated");
+                    }
+                    // In some providers the refresh token may also change when a refresh occurs
+                    if (json.has("refresh_token"))
+                    {
+                        String refreshToken = json.getString("refresh_token");
+                        if (refreshToken != null && !refreshToken.equals(oldRefreshToken))
+                        {
+                            if (logger.isDebugEnabled())
+                                logger.debug("Got new refresh token " + refreshToken);
+                            connectorSession.setParameter(OAuth2Authenticator.CS_PARAM_REFRESH_TOKEN, refreshToken);
+                            tokensChanged = true;
+                        }
                     }
                 }
                 catch (TokenRefreshException e)
@@ -215,6 +231,18 @@ public class HttpOAuth2Connector extends HttpConnector
                             "ERR_REFRESH_TOKEN", 
                             "Unable to refresh token",
                             e);
+                }
+                catch (JSONException e)
+                {
+                    writeError(wrappedRes, ResponseStatus.STATUS_INTERNAL_SERVER_ERROR, 
+                            "ERR_MISSING_ACCESS_TOKEN", 
+                            "Unable to retrieve access token from provider response",
+                            e);
+                }
+                
+                if (tokensChanged)
+                {
+                    saveTokens(endpointId, req);
                 }
             }
 
@@ -441,8 +469,7 @@ public class HttpOAuth2Connector extends HttpConnector
         }
     }
 
-    // TODO replace AuthenticationException with something else
-    protected String doRefresh(String endpointId) throws TokenRefreshException
+    protected JSONObject doRefresh(String endpointId) throws TokenRefreshException
     {
         String refreshToken = getRefreshToken();
         EndpointDescriptor epd = getEndpointDescriptor(endpointId);
@@ -450,6 +477,7 @@ public class HttpOAuth2Connector extends HttpConnector
         // First try to get the client-id and access-token-url from the endpoint, then from the connector
         // TODO Make these strings constants in a Descriptor sub-class or interface
         String clientId = getDescriptorProperty("client-id", epd);
+        String clientSecret = getDescriptorProperty("client-secret", epd);
         String tokenUrl = getDescriptorProperty("access-token-url", epd);
         /*
         RemoteClient remoteClient = buildRemoteClient(tokenUrl);
@@ -476,6 +504,7 @@ public class HttpOAuth2Connector extends HttpConnector
         method.addParameter("grant_type", "refresh_token");
         method.addParameter("refresh_token", refreshToken);
         method.addParameter("client_id", clientId);
+        method.addParameter("client_secret", clientSecret);
         method.addRequestHeader("Accept", Format.JSON.mimetype());
         
         int statusCode;
@@ -488,11 +517,10 @@ public class HttpOAuth2Connector extends HttpConnector
             
             if (statusCode == Status.STATUS_OK)
             {
-                String accessToken;
+                JSONObject json;
                 try
                 {
-                    JSONObject json = new JSONObject(tokenResp);
-                    accessToken = json.getString("access_token");
+                    json = new JSONObject(tokenResp);
                 } 
                 catch (JSONException jErr)
                 {
@@ -502,30 +530,23 @@ public class HttpOAuth2Connector extends HttpConnector
                             "Unable to retrieve access token from provider response", jErr);
                 }
                 
-                if (logger.isDebugEnabled())
-                    logger.debug("Parsed access token: " + accessToken);
-                
-                return accessToken;
+                return json;
             }
             else
             {
                 if (logger.isDebugEnabled())
                     logger.debug("Token refresh failed, received response code: " + statusCode);
                     logger.debug("Received response " + tokenResp);
-                return null;
+                throw new TokenRefreshException("Token refresh failed, received response code: " + statusCode);
             }
         }
         catch (HttpException e)
         {
-            // TODO Auto-generated catch block
-            e.printStackTrace();
-            return null;
+            throw new TokenRefreshException("Error when refreshing tokens", e);
         }
         catch (IOException e)
         {
-            // TODO Auto-generated catch block
-            e.printStackTrace();
-            return null;
+            throw new TokenRefreshException("Error when refreshing tokens", e);
         }
     }
 
