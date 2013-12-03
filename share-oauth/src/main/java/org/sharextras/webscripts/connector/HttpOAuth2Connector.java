@@ -303,6 +303,7 @@ public class HttpOAuth2Connector extends HttpConnector
             String userId = getUserId(session);
             ConnectorService connectorService = getConnectorService();
 
+            // TODO Check that userId is not null, which it will be if the user's session has expired
             OAuth2CredentialVault vault = (OAuth2CredentialVault)connectorService.getCredentialVault(session, userId, VAULT_PROVIDER_ID);
             if (load)
             {
@@ -582,8 +583,10 @@ public class HttpOAuth2Connector extends HttpConnector
 
     private String getEndpointId(String uri, HttpServletRequest request)
     {
+        // Work out URI path (i.e. uri without the querystring portion)
+        String uriPath = uri.indexOf('?') > -1 ? uri.substring(0, uri.indexOf('?')) : uri;
         return getEndpointId() != null ? getEndpointId() : 
-            request.getPathInfo().replaceAll(uri, "").replaceAll("/proxy/", "");
+            request.getPathInfo().replaceAll(uriPath, "").replaceAll("/proxy/", "");
         
     }
 
