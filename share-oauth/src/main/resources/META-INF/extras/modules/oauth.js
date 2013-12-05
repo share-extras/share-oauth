@@ -193,8 +193,8 @@ if (typeof Extras == "undefined" || !Extras)
       hasToken: function OAuth_hasToken()
       {
           // TODO check that the token is valid as well as that it just exists?
-          return this.authData.oauth_token != null && this.authData.oauth_token != "" && 
-              this.authData.oauth_token_secret != null && this.authData.oauth_token_secret != "";
+          return this.authData.oauth_token !== null && this.authData.oauth_token !== "" && 
+              this.authData.oauth_token_secret !== null && this.authData.oauth_token_secret !== "";
       },
       
       /**
@@ -206,9 +206,9 @@ if (typeof Extras == "undefined" || !Extras)
       isAuthorized: function OAuth_isAuthorized()
       {
           // TODO check that the token is valid as well as that it just exists?
-          return this.authData.oauth_token != null && this.authData.oauth_token != "" && 
-              this.authData.oauth_token_secret != null && this.authData.oauth_token_secret != ""
-              && !this.authData.oauth_callback_confirmed;
+          return this.authData.oauth_token !== null && this.authData.oauth_token !== "" && 
+              this.authData.oauth_token_secret !== null && this.authData.oauth_token_secret !== "" &&
+              !this.authData.oauth_callback_confirmed;
       },
       
       /**
@@ -224,7 +224,7 @@ if (typeof Extras == "undefined" || !Extras)
               authParams = {};
           
           // Add a callback if needed
-          if (this.options.connectorId != null && this.options.connectorId != "")
+          if (this.options.connectorId !== null && this.options.connectorId !== "")
           {
               authParams.oauth_callback = window.location.protocol + "//" + window.location.host + 
                   Alfresco.constants.URL_SERVICECONTEXT + "extras/oauth/auth-return" + "?rp=" + 
@@ -232,7 +232,7 @@ if (typeof Extras == "undefined" || !Extras)
                   "&pid=" + this.options.providerId + "&eid=" + this.options.endpointId + "&cid=" + 
                   this.options.connectorId;
           }
-          else if (this.options.requestTokenCallbackUri != null && !authParams.oauth_callback)
+          else if (this.options.requestTokenCallbackUri !== null && !authParams.oauth_callback)
           {
               authParams.oauth_callback = this.options.requestTokenCallbackUri;
           }
@@ -472,10 +472,10 @@ if (typeof Extras == "undefined" || !Extras)
           var successCallback = {
               fn: function (p_resp) {
                   var json = p_resp.json;
-                  if (json != null && json.org != null)
+                  if (json !== null && json.org)
                   {
                       var credentials = json.org.alfresco.share.oauth[this.options.providerId].data;
-                      if (credentials != null && credentials.length > 0)
+                      if (credentials !== null && credentials.length > 0)
                       {
                           var authData = this._unpackAuthData(credentials);
                           // Ensure both required tokens have been found
@@ -634,7 +634,7 @@ if (typeof Extras == "undefined" || !Extras)
                   }
               }
               return params;
-          }
+          };
           
           if (YAHOO.lang.isObject(obj.dataObj))
           {
@@ -647,11 +647,11 @@ if (typeof Extras == "undefined" || !Extras)
                   var reqType = obj.requestContentType || Alfresco.util.Ajax.FORM;
                   if (!YAHOO.lang.isValue(obj.dataStr))
                   {
-                      if ((new RegExp("^\s*" + Alfresco.util.Ajax.FORM)).test(reqType))
+                      if ((new RegExp("^\\s*" + Alfresco.util.Ajax.FORM)).test(reqType))
                       {
                           obj.dataStr = objToParamString(obj.dataObj, "+");
                       }
-                      else if ((new RegExp("^\s*" + Alfresco.util.Ajax.JSON)).test(reqType))
+                      else if ((new RegExp("^\\s*" + Alfresco.util.Ajax.JSON)).test(reqType))
                       {
                           obj.dataStr = YAHOO.lang.JSON.stringify(obj.dataObj || {});
                       }
@@ -667,7 +667,7 @@ if (typeof Extras == "undefined" || !Extras)
                   o.getResponseHeader["content-type"];
                   // User provided a custom successCallback
                   var json = null;
-                  if ((new RegExp("^\s*" + Alfresco.util.Ajax.JSON)).test(contentType))
+                  if ((new RegExp("^\\s*" + Alfresco.util.Ajax.JSON)).test(contentType))
                   {
                       cbObj.json = Alfresco.util.parseJSON(o.responseText);
                   }
@@ -706,7 +706,8 @@ if (typeof Extras == "undefined" || !Extras)
        */
       _packAuthData: function OAuth__packAuthData(data, delimiter, quote)
       {
-          var items = [], d, quote = quote || "";
+          var items = [], d, k;
+          quote = quote || "";
           for (k in data)
           {
               items.push("" + k + "=" + quote + data[k] + quote);
@@ -773,11 +774,11 @@ if (typeof Extras == "undefined" || !Extras)
               data.oauth_timestamp = Math.floor(Date.now()/1000);
           }
           // Access token, if we have one and another token was not specified
-          if (typeof data.oauth_token == "undefined" && this.authData != null && this.authData.oauth_token != null)
+          if (typeof data.oauth_token === "undefined" && this.authData !== null && this.authData.oauth_token !== null)
           {
               data.oauth_token = this.authData.oauth_token;
           }
-          if (typeof data.oauth_token_secret == "undefined" && this.authData != null && this.authData.oauth_token_secret != null)
+          if (typeof data.oauth_token_secret === "undefined" && this.authData !== null && this.authData.oauth_token_secret !== null)
           {
               data.oauth_token_secret = this.authData.oauth_token_secret;
           }
