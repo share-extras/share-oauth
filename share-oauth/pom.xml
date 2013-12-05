@@ -99,7 +99,7 @@
                 </executions>
                 <configuration>
                     <directories>
-                        <directory>src/main/resources/META-INF</directory>
+                        <directory>src/main/resources</directory>
                     </directories>
                 </configuration>
             </plugin>
