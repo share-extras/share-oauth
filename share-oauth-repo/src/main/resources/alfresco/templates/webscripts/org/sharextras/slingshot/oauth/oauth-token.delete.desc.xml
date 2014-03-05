@@ -1,0 +1,7 @@
+<webscript>
+    <shortname>OAuth2-delete-token</shortname>
+    <description>Script to delete an OAuth 2.0 token</description>
+    <url>/extras/oauth2/token/{name}</url>
+    <authentication>user</authentication>
+    <format default="json">any</format>
+</webscript>

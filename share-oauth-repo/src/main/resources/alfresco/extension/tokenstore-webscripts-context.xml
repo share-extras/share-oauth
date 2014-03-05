@@ -16,4 +16,11 @@
         </property>
     </bean>
 
+    <bean id="webscript.org.sharextras.slingshot.oauth.oauth-token.delete" 
+            class="org.sharextras.oauth.repo.webscripts.DeleteOAuthToken" parent="webscript">
+        <property name="oauth2CredentialsStoreService">
+            <ref bean="oauth2CredentialsStoreService" />
+        </property>
+    </bean>
+
 </beans>
