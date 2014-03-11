@@ -581,13 +581,26 @@ public class HttpOAuth2Connector extends HttpConnector
         return descriptor.getStringProperty(PARAM_TOKEN_ENDPOINT);
     }
 
+    /**
+     * Get the endpoint ID identified in the given request object. This is necessary because the connector is
+     * not aware of the ID of the endpoint which is utilising it, only the URI.
+     * 
+     * @param uri       URI path relative to the base endpoint URI, passed to the connector, e.g. /path/to/blah
+     * @param request   HTTP request object representing the proxied request object
+     * @return          The endpoint ID as specified in the web-tier config
+     */
     private String getEndpointId(String uri, HttpServletRequest request)
     {
         // Work out URI path (i.e. uri without the querystring portion)
         String uriPath = uri.indexOf('?') > -1 ? uri.substring(0, uri.indexOf('?')) : uri;
-        return getEndpointId() != null ? getEndpointId() : 
-            request.getPathInfo().replaceAll(uriPath, "").replaceAll("/proxy/", "");
-        
+        String endpointId = getEndpointId();
+        if (endpointId == null)
+        {
+            String basePath =  request.getPathInfo() // will be something like /proxy/endpoint-id/path/to/blah
+                    .substring(0, request.getPathInfo().length() - uriPath.length());
+            endpointId = basePath.substring(basePath.lastIndexOf('/') + 1); // take the last path segment only
+        }
+        return endpointId;
     }
 
     private ConnectorService getConnectorService()
