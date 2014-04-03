@@ -206,8 +206,8 @@ if (typeof Extras == "undefined" || !Extras)
       isAuthorized: function OAuth_isAuthorized()
       {
           // TODO check that the token is valid as well as that it just exists?
-          return this.authData.oauth_token !== null && this.authData.oauth_token !== "" && 
-              this.authData.oauth_token_secret !== null && this.authData.oauth_token_secret !== "" &&
+          return this.authData.oauth_token &&
+              this.authData.oauth_token_secret &&
               !this.authData.oauth_callback_confirmed;
       },
       
@@ -774,11 +774,11 @@ if (typeof Extras == "undefined" || !Extras)
               data.oauth_timestamp = Math.floor(Date.now()/1000);
           }
           // Access token, if we have one and another token was not specified
-          if (typeof data.oauth_token === "undefined" && this.authData !== null && this.authData.oauth_token !== null)
+          if (typeof data.oauth_token === "undefined" && this.authData && this.authData.oauth_token)
           {
               data.oauth_token = this.authData.oauth_token;
           }
-          if (typeof data.oauth_token_secret === "undefined" && this.authData !== null && this.authData.oauth_token_secret !== null)
+          if (typeof data.oauth_token_secret === "undefined" && this.authData && this.authData.oauth_token_secret)
           {
               data.oauth_token_secret = this.authData.oauth_token_secret;
           }
