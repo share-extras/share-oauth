@@ -4,7 +4,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>org.sharextras</groupId>
     <artifactId>share-oauth-parent</artifactId>
-    <version>2.3-SNAPSHOT</version>
+    <version>2.3.0</version>
     <name>Share OAuth Parent</name>
     <packaging>pom</packaging>
 
