@@ -9,6 +9,8 @@ import org.apache.commons.httpclient.HttpClient;
 import org.apache.commons.httpclient.HttpException;
 import org.apache.commons.httpclient.HttpMethod;
 import org.apache.commons.httpclient.methods.PostMethod;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.json.JSONStringer;
@@ -58,6 +60,8 @@ public class OAuthReturn extends AbstractWebScript
 	ScriptRemote scriptRemote;
 	ConnectorService connectorService;
 	String accessTokenUrl;
+
+    private static Log logger = LogFactory.getLog(OAuthReturn.class);
 
 	/**
 	 * Web Script constructor
@@ -353,7 +357,17 @@ public class OAuthReturn extends AbstractWebScript
 		}
 		else
 		{
-			throw new WebScriptException(statusCode, "A problem occurred while requesting the access token");
+		    try
+		    {
+		        byte[] responseBody = method.getResponseBody();
+		        String tokenResp = new String(responseBody, Charset.forName("UTF-8"));
+		        logger.error("Request for access token returned " + statusCode + " response: " + tokenResp);
+		    }
+		    catch (IOException e)
+		    {
+		        
+		    }
+			throw new WebScriptException(statusCode, "A problem occurred while requesting the access token (code " + statusCode + ")");
 		}
 	}
 	
